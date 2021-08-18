@@ -12,38 +12,10 @@ pub fn Pattern(comptime TokenType: type) type {
         type: TokenType,
         match: Matcher,
 
-        /// Matches the literal `text`.
-        pub fn literal(comptime kind: TokenType, comptime text: []const u8) Self {
+        pub fn create(token_type: TokenType, match: Matcher) Self {
             return Self{
-                .type = kind,
-                .match = struct {
-                    fn match(str: []const u8) ?usize {
-                        return if (std.mem.startsWith(u8, str, text))
-                            text.len
-                        else
-                            null;
-                    }
-                }.match,
-            };
-        }
-
-        /// Takes characters while they are any of the given `chars`.
-        pub fn takeAnyOf(comptime kind: TokenType, comptime chars: []const u8) Self {
-            return Self{
-                .type = kind,
-                .match = struct {
-                    fn match(str: []const u8) ?usize {
-                        for (str) |c, i| {
-                            if (std.mem.indexOfScalar(u8, chars, c) == null) {
-                                return if (i > 0)
-                                    i
-                                else
-                                    null;
-                            }
-                        }
-                        return str.len;
-                    }
-                }.match,
+                .type = token_type,
+                .match = match,
             };
         }
     };
@@ -98,11 +70,13 @@ pub fn Tokenizer(comptime TokenType: type, comptime patterns: []const Pattern(To
                 return null;
             const maybe_token = for (patterns) |pat| {
                 if (pat.match(rest)) |len| {
-                    break Token{
-                        .location = self.current_location,
-                        .text = rest[0..len],
-                        .type = pat.type,
-                    };
+                    if (len > 0) {
+                        break Token{
+                            .location = self.current_location,
+                            .text = rest[0..len],
+                            .type = pat.type,
+                        };
+                    }
                 }
             } else null;
             if (maybe_token) |token| {
@@ -116,6 +90,120 @@ pub fn Tokenizer(comptime TokenType: type, comptime patterns: []const Pattern(To
     };
 }
 
+pub const matchers = struct {
+    /// Matches the literal `text`.
+    pub fn literal(comptime text: []const u8) Matcher {
+        return struct {
+            fn match(str: []const u8) ?usize {
+                return if (std.mem.startsWith(u8, str, text))
+                    text.len
+                else
+                    null;
+            }
+        }.match;
+    }
+
+    /// Matches any "word" that is "text\b"
+    pub fn word(comptime text: []const u8) Matcher {
+        return struct {
+            fn match(input: []const u8) ?usize {
+                if (std.mem.startsWith(u8, input, text)) {
+                    if (text.len == input.len)
+                        return text.len;
+                    const c = input[text.len];
+                    if (std.ascii.isAlNum(c) or (c == '_')) // matches regex \w\W
+                        return null;
+                    return text.len;
+                }
+
+                return null;
+            }
+        }.match;
+    }
+
+    /// Takes characters while they are any of the given `chars`.
+    pub fn takeAnyOf(comptime chars: []const u8) Matcher {
+        return struct {
+            fn match(str: []const u8) ?usize {
+                for (str) |c, i| {
+                    if (std.mem.indexOfScalar(u8, chars, c) == null) {
+                        return i;
+                    }
+                }
+                return str.len;
+            }
+        }.match;
+    }
+    /// Takes characters while they are any of the given `chars`.
+    pub fn takeAnyOfIgnoreCase(comptime chars: []const u8) Matcher {
+        const lower_chars = comptime blk: {
+            comptime var buffer: [chars.len]u8 = undefined;
+            break :blk std.ascii.lowerString(&buffer, chars);
+        };
+
+        return struct {
+            fn match(str: []const u8) ?usize {
+                for (str) |c, i| {
+                    const lc = std.ascii.toLower(c);
+                    if (std.mem.indexOfScalar(u8, lower_chars, lc) == null) {
+                        return i;
+                    }
+                }
+                return str.len;
+            }
+        }.match;
+    }
+
+    pub fn withPrefix(comptime prefix: []const u8, comptime matcher: Matcher) Matcher {
+        return struct {
+            fn match(str: []const u8) ?usize {
+                if (!std.mem.startsWith(u8, str, prefix))
+                    return null;
+                const pattern_len = matcher(str[prefix.len..]) orelse return null;
+                return prefix.len + pattern_len;
+            }
+        }.match;
+    }
+
+    // pre-shipped typical patterns
+
+    fn identifier(str: []const u8) ?usize {
+        const first_char = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const all_chars = first_char ++ "0123456789";
+        for (str) |c, i| {
+            if (std.mem.indexOfScalar(u8, if (i > 0) all_chars else first_char, c) == null) {
+                return i;
+            }
+        }
+        return str.len;
+    }
+
+    fn whitespace(str: []const u8) ?usize {
+        for (str) |c, i| {
+            if (!std.ascii.isSpace(c))
+                return i;
+        }
+        return str.len;
+    }
+
+    fn linefeed(str: []const u8) ?usize {
+        if (std.mem.startsWith(u8, str, "\r\n"))
+            return 2;
+        if (std.mem.startsWith(u8, str, "\n"))
+            return 1;
+        return null;
+    }
+
+    pub fn numberOfBase(comptime base: comptime_int) Matcher {
+        return takeAnyOfIgnoreCase("0123456789ABCDEF"[0..base]);
+    }
+
+    const hexadecimalNumber = numberOfBase(16);
+    const decimalNumber = numberOfBase(10);
+    const octalNumber = numberOfBase(8);
+    const binaryNumber = numberOfBase(2);
+};
+
 const TestTokenType = enum {
     number,
     identifier,
@@ -126,10 +214,10 @@ const TestTokenType = enum {
 const TestPattern = Pattern(TestTokenType);
 
 const TestTokenizer = Tokenizer(TestTokenType, &[_]TestPattern{
-    TestPattern.takeAnyOf(.number, "0123456789"),
-    TestPattern.literal(.keyword, "while"),
-    TestPattern.takeAnyOf(.identifier, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
-    TestPattern.takeAnyOf(.whitespace, " \r\n\t"),
+    TestPattern.create(.number, matchers.takeAnyOf("0123456789")),
+    TestPattern.create(.keyword, matchers.literal("while")),
+    TestPattern.create(.identifier, matchers.takeAnyOf("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")),
+    TestPattern.create(.whitespace, matchers.takeAnyOf(" \r\n\t")),
 });
 
 test "simple tokenization" {
@@ -200,4 +288,77 @@ test "save/restore tokenization" {
     try std.testing.expectEqual(Location{ .source = null, .line = 1, .column = 6 }, ws0.location);
     try std.testing.expectEqual(Location{ .source = null, .line = 1, .column = 6 }, ws1.location);
     try std.testing.expectEqual(Location{ .source = null, .line = 2, .column = 1 }, id1.location);
+}
+
+fn testMatcher(match: Matcher, good: []const []const u8, bad: []const []const u8) !void {
+    for (good) |str| {
+        const v = match(str) orelse {
+            std.log.err("Didn't match pattern '{s}'", .{str});
+            return error.MissedGoodPattern;
+        };
+        if (v == 0) {
+            std.log.err("Didn't match pattern '{s}'", .{str});
+            return error.MissedGoodPattern;
+        }
+    }
+    for (bad) |str| {
+        const v = match(str);
+        if (v != null and v.? > 0) {
+            std.log.err("Matched pattern '{s}'", .{str});
+            return error.MissedBadPattern;
+        }
+    }
+}
+
+test "premade patterns" {
+    try testMatcher(
+        matchers.literal("hello"),
+        &[_][]const u8{ "hello", "hellobar", "hello_bar" },
+        &[_][]const u8{ "gello", "foobar", " hello " },
+    );
+    try testMatcher(
+        matchers.word("hello"),
+        &[_][]const u8{ "hello", "hello bar" },
+        &[_][]const u8{ "hellobar", "hello_bar", "gello", "foobar", " hello " },
+    );
+    try testMatcher(
+        comptime matchers.withPrefix("foo_", matchers.word("hello")),
+        &[_][]const u8{ "foo_hello", "foo_hello bar" },
+        &[_][]const u8{ "foo_hellobar", "foo_hello_bar", "hello", "gello", "foobar", " hello " },
+    );
+    try testMatcher(
+        comptime matchers.takeAnyOf("abc"),
+        &[_][]const u8{ "a", "b", "c", "abc", "a x", "b x", "c x", "abcabcabcabc" },
+        &[_][]const u8{ "xabc", "xa", "xb", " aaa", "x asd", " x " },
+    );
+    try testMatcher(
+        comptime matchers.takeAnyOfIgnoreCase("abc"),
+        &[_][]const u8{ "a", "b", "c", "abc", "a x", "b x", "c x", "abcabcabcabc", "A", "B", "C", "ABC", "A X", "B X", "C X", "ABCABCABCABC" },
+        &[_][]const u8{ "xabc", "xa", "xb", " aaa", "x asd", " x ", "XABC", "XA", "XB", " AAA", "X ASD", " X " },
+    );
+    try testMatcher(
+        matchers.identifier,
+        &[_][]const u8{ "foo", "Foo", "hello_bar", "_bar", "he11o" },
+        &[_][]const u8{ "10foo", "!", " foo " },
+    );
+    try testMatcher(
+        matchers.whitespace,
+        &[_][]const u8{ " ", " a", "\r", "\n", "\t" },
+        &[_][]const u8{ "10foo", "!", "foo " },
+    );
+    try testMatcher(
+        matchers.linefeed,
+        &[_][]const u8{ "\n", "\r\n", "\nfoo", "\r\nbar" },
+        &[_][]const u8{ "\r\r\n", "!", "  " },
+    );
+    try testMatcher(
+        matchers.decimalNumber,
+        &[_][]const u8{ "10", "99", "1234567890" },
+        &[_][]const u8{ "a", "b", " 123 " },
+    );
+    try testMatcher(
+        matchers.binaryNumber,
+        &[_][]const u8{ "10", "01", "1100101" },
+        &[_][]const u8{ "2", "3", " 01 " },
+    );
 }
