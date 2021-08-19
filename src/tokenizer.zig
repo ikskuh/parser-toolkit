@@ -21,15 +21,18 @@ pub fn Pattern(comptime TokenType: type) type {
     };
 }
 
-pub fn Tokenizer(comptime TokenType: type, comptime patterns: []const Pattern(TokenType)) type {
+pub fn Tokenizer(comptime TokenTypeT: type, comptime patterns: []const Pattern(TokenTypeT)) type {
     return struct {
         const Self = @This();
-        pub const Token = GenericToken(TokenType);
+        pub const Token = GenericToken(TokenTypeT);
+        pub const TokenType = TokenTypeT;
 
         pub const State = struct {
             offset: usize,
             location: Location,
         };
+
+        pub const Error = NextError;
 
         source: []const u8,
         offset: usize,
@@ -47,10 +50,6 @@ pub fn Tokenizer(comptime TokenType: type, comptime patterns: []const Pattern(To
             };
         }
 
-        pub fn deinit(self: *Self) void {
-            self.* = undefined;
-        }
-
         pub fn saveState(self: Self) State {
             return State{
                 .offset = self.offset,
@@ -63,7 +62,7 @@ pub fn Tokenizer(comptime TokenType: type, comptime patterns: []const Pattern(To
             self.current_location = state.location;
         }
 
-        const NextError = error{UnexpectedCharacter};
+        pub const NextError = error{UnexpectedCharacter};
         pub fn next(self: *Self) NextError!?Token {
             const rest = self.source[self.offset..];
             if (rest.len == 0)
@@ -165,9 +164,28 @@ pub const matchers = struct {
         }.match;
     }
 
+    /// Concats several matchers into a single one that matches a sequence of all patterns
+    pub fn sequenceOf(comptime list: anytype) Matcher {
+        const sequence: [list.len]Matcher = list;
+        if (sequence.len == 0)
+            @compileError("Empty sequence not allowed!");
+        return struct {
+            fn match(input: []const u8) ?usize {
+                var total_len: usize = 0;
+                for (sequence) |seq_match| {
+                    const len = seq_match(input[total_len..]) orelse return null;
+                    if (len == 0)
+                        return null;
+                    total_len += len;
+                }
+                return total_len;
+            }
+        }.match;
+    }
+
     // pre-shipped typical patterns
 
-    fn identifier(str: []const u8) ?usize {
+    pub fn identifier(str: []const u8) ?usize {
         const first_char = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
         const all_chars = first_char ++ "0123456789";
         for (str) |c, i| {
@@ -178,7 +196,7 @@ pub const matchers = struct {
         return str.len;
     }
 
-    fn whitespace(str: []const u8) ?usize {
+    pub fn whitespace(str: []const u8) ?usize {
         for (str) |c, i| {
             if (!std.ascii.isSpace(c))
                 return i;
@@ -186,7 +204,7 @@ pub const matchers = struct {
         return str.len;
     }
 
-    fn linefeed(str: []const u8) ?usize {
+    pub fn linefeed(str: []const u8) ?usize {
         if (std.mem.startsWith(u8, str, "\r\n"))
             return 2;
         if (std.mem.startsWith(u8, str, "\n"))
@@ -198,10 +216,10 @@ pub const matchers = struct {
         return takeAnyOfIgnoreCase("0123456789ABCDEF"[0..base]);
     }
 
-    const hexadecimalNumber = numberOfBase(16);
-    const decimalNumber = numberOfBase(10);
-    const octalNumber = numberOfBase(8);
-    const binaryNumber = numberOfBase(2);
+    pub const hexadecimalNumber = numberOfBase(16);
+    pub const decimalNumber = numberOfBase(10);
+    pub const octalNumber = numberOfBase(8);
+    pub const binaryNumber = numberOfBase(2);
 };
 
 const TestTokenType = enum {
@@ -360,5 +378,10 @@ test "premade patterns" {
         matchers.binaryNumber,
         &[_][]const u8{ "10", "01", "1100101" },
         &[_][]const u8{ "2", "3", " 01 " },
+    );
+    try testMatcher(
+        comptime matchers.sequenceOf(.{ matchers.decimalNumber, matchers.literal("."), matchers.decimalNumber }),
+        &[_][]const u8{ "10.0", "1.0", "0.01234" },
+        &[_][]const u8{ ".1", "1", "10", ".1234", "10." },
     );
 }
