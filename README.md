@@ -1,5 +1,7 @@
 # A parser toolkit
 
+![Project Logo](design/logo.png)
+
 This repo contains a tiny parser toolkit that can be used to build new parsers and programming languages.
 
 It provides:
