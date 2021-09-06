@@ -68,71 +68,37 @@ const Calculator = struct {
     }
 
     pub fn evaluate(self: *Self, expression: []const u8) !f64 {
-        var ast = try Parser.parse(&self.arena.allocator, expression);
-        defer ast.deinit();
-
-        const value = self.evaluateAstNode(ast.root);
-
-        return value;
+        return try Parser.parse(.{ .calc = self }, expression);
     }
 
-    const EvalError = error{ VariableNotFound, OutOfMemory, ArgumentMismatch, UnknownFunction };
-    fn evaluateAstNode(self: *Self, node: Ast.Node) EvalError!f64 {
-        return switch (node) {
-            .number => |n| n,
-            .variable => |v| self.get(v) orelse return error.VariableNotFound,
-            .binary_operator => |op| blk: {
-                const lhs = try self.evaluateAstNode(op.lhs.*);
-                const rhs = try self.evaluateAstNode(op.rhs.*);
-                break :blk switch (op.operator) {
-                    .add => lhs + rhs,
-                    .subtract => lhs - rhs,
-                    .multiply => lhs * rhs,
-                    .divide => lhs / rhs,
-                    .modulus => @mod(lhs, rhs),
-                };
-            },
-            .unary_operator => |op| blk: {
-                const value = try self.evaluateAstNode(op.value.*);
-                break :blk switch (op.operator) {
-                    .negate => -value,
-                };
-            },
-            .assignment => |ass| blk: {
-                const value = try self.evaluateAstNode(ass.value.*);
-                try self.set(ass.variable, value);
-                break :blk value;
-            },
-            .function_invocation => |fun| try self.invokeFunction(fun),
-        };
-    }
+    const EvalError = error{ UnknownFunction, ArgumentMismatch };
 
-    fn invokeFunction(self: *Self, fun: Ast.Node.FunctionInvocation) EvalError!f64 {
+    fn invokeFunction(self: *Self, func_name: []const u8, args: []const f64) EvalError!f64 {
         inline for (std.meta.declarations(builtin_functions)) |decl| {
-            if (std.mem.eql(u8, decl.name, fun.function)) {
+            if (std.mem.eql(u8, decl.name, func_name)) {
                 const FnType = decl.data.Fn.fn_type;
                 const function = @field(builtin_functions, decl.name);
-                return try self.invokeExplicitFunction(FnType, function, fun);
+                return try self.invokeExplicitFunction(FnType, function, args);
             }
         }
         return error.UnknownFunction;
     }
 
-    fn invokeExplicitFunction(self: *Self, comptime FnType: type, comptime function: FnType, fun: Ast.Node.FunctionInvocation) EvalError!f64 {
+    fn invokeExplicitFunction(self: *Self, comptime FnType: type, comptime function: FnType, arg_vals: []const f64) EvalError!f64 {
+        _ = self;
+
         const ArgsTuple = std.meta.ArgsTuple(FnType);
 
         var args: ArgsTuple = undefined;
-        if (fun.arguments.len != args.len)
+        if (arg_vals.len != args.len)
             return error.ArgumentMismatch;
 
         comptime var i = 0;
         inline while (i < args.len) : (i += 1) {
-            args[i] = try self.evaluateAstNode(fun.arguments[i]);
+            args[i] = arg_vals[i];
         }
 
-        const value = @call(.{}, function, args);
-
-        return value;
+        return @call(.{}, function, args);
     }
 
     const builtin_functions = struct {
@@ -151,48 +117,6 @@ const Calculator = struct {
         pub fn pow(a: f64, b: f64) f64 {
             return std.math.pow(f64, a, b);
         }
-    };
-};
-
-const UnOp = enum { negate };
-const BinOp = enum { add, subtract, multiply, divide, modulus };
-
-const Ast = struct {
-    arena: std.heap.ArenaAllocator,
-    root: Node,
-
-    pub fn deinit(self: *Ast) void {
-        self.arena.deinit();
-        self.* = undefined;
-    }
-
-    const Node = union(enum) {
-        const Self = @This();
-
-        number: f64,
-        variable: []const u8,
-        unary_operator: UnaryOperator,
-        binary_operator: BinaryOperator,
-        function_invocation: FunctionInvocation,
-        assignment: Assignment,
-
-        const UnaryOperator = struct {
-            operator: UnOp,
-            value: *Self,
-        };
-        const BinaryOperator = struct {
-            operator: BinOp,
-            lhs: *Self,
-            rhs: *Self,
-        };
-        const FunctionInvocation = struct {
-            function: []const u8,
-            arguments: []Self,
-        };
-        const Assignment = struct {
-            variable: []const u8,
-            value: *Self,
-        };
     };
 };
 
@@ -234,45 +158,45 @@ const Parser = struct {
 
     const ParserCore = ptk.ParserCore(Tokenizer, .{.whitespace});
 
-    pub fn parse(allocator: *std.mem.Allocator, expression: []const u8) !Ast {
-        var ast = Ast{
-            .arena = std.heap.ArenaAllocator.init(allocator),
-            .root = undefined,
-        };
+    const ExpressionContext = struct {
+        calc: *Calculator,
 
+        fn set(self: *ExpressionContext, var_name: []const u8, value: f64) !void {
+            try self.calc.set(var_name, value);
+        }
+
+        fn get(self: *ExpressionContext, var_name: []const u8) ?f64 {
+            return self.calc.get(var_name);
+        }
+
+        fn call(self: *ExpressionContext, func: []const u8, args: []const f64) !f64 {
+            return try self.calc.invokeFunction(func, args);
+        }
+    };
+
+    pub fn parse(context: ExpressionContext, expression: []const u8) !f64 {
         var tokenizer = Tokenizer.init(expression);
 
         var parser = Parser{
-            .arena = &ast.arena.allocator,
             .core = ParserCore.init(&tokenizer),
+            .ctx = context,
         };
 
-        ast.root = try parser.acceptTopLevelExpression();
+        const value = try parser.acceptTopLevelExpression();
 
         if ((try parser.core.peek()) != null)
             return error.SyntaxError;
 
-        return ast;
+        return value;
     }
 
-    arena: *std.mem.Allocator,
     core: ParserCore,
+    ctx: ExpressionContext,
 
-    const Error = ParserCore.Error || std.mem.Allocator.Error;
+    const Error = ParserCore.Error || Calculator.EvalError || std.mem.Allocator.Error || error{VariableNotFound};
     const ruleset = ptk.RuleSet(TokenType);
 
-    fn moveToHeap(self: *Self, value: anytype) !*@TypeOf(value) {
-        const T = @TypeOf(value);
-        std.debug.assert(@typeInfo(T) != .Pointer);
-        const ptr = try self.arena.create(T);
-        ptr.* = value;
-
-        std.debug.assert(std.meta.eql(ptr.*, value));
-
-        return ptr;
-    }
-
-    fn acceptTopLevelExpression(self: *Self) Error!Ast.Node {
+    fn acceptTopLevelExpression(self: *Self) Error!f64 {
         const state = self.core.saveState();
         errdefer self.core.restoreState(state);
 
@@ -283,7 +207,7 @@ const Parser = struct {
         }
     }
 
-    fn acceptAssignment(self: *Self) Error!Ast.Node {
+    fn acceptAssignment(self: *Self) Error!f64 {
         const state = self.core.saveState();
         errdefer self.core.restoreState(state);
 
@@ -291,90 +215,69 @@ const Parser = struct {
         _ = try self.core.accept(comptime ruleset.is(.@"="));
         const value = try self.acceptExpression();
 
-        return Ast.Node{
-            .assignment = .{
-                .variable = try self.arena.dupe(u8, variable.text),
-                .value = try self.moveToHeap(value),
-            },
-        };
+        try self.ctx.set(variable.text, value);
+
+        return value;
     }
 
-    fn acceptExpression(self: *Self) Error!Ast.Node {
+    fn acceptExpression(self: *Self) Error!f64 {
         const state = self.core.saveState();
         errdefer self.core.restoreState(state);
         return try self.acceptSumExpression();
     }
 
-    fn acceptSumExpression(self: *Self) Error!Ast.Node {
+    fn acceptSumExpression(self: *Self) Error!f64 {
         const state = self.core.saveState();
         errdefer self.core.restoreState(state);
 
-        var expr = try self.acceptMulExpression();
+        var value = try self.acceptMulExpression();
         while (true) {
             const operator = self.core.accept(comptime ruleset.oneOf(.{ .@"+", .@"-" })) catch break;
             const rhs = try self.acceptMulExpression();
 
-            const new_expr = Ast.Node{
-                .binary_operator = .{
-                    .operator = switch (operator.type) {
-                        .@"+" => .add,
-                        .@"-" => .subtract,
-                        else => unreachable,
-                    },
-                    .lhs = try self.moveToHeap(expr),
-                    .rhs = try self.moveToHeap(rhs),
-                },
+            const new_value = switch (operator.type) {
+                .@"+" => value + rhs,
+                .@"-" => value - rhs,
+                else => unreachable,
             };
-            expr = new_expr;
+            value = new_value;
         }
-        return expr;
+        return value;
     }
 
-    fn acceptMulExpression(self: *Self) Error!Ast.Node {
+    fn acceptMulExpression(self: *Self) Error!f64 {
         const state = self.core.saveState();
         errdefer self.core.restoreState(state);
 
-        var expr = try self.acceptUnaryPrefixOperatorExpression();
+        var value = try self.acceptUnaryPrefixOperatorExpression();
         while (true) {
             const operator = self.core.accept(comptime ruleset.oneOf(.{ .@"*", .@"/", .@"%" })) catch break;
             const rhs = try self.acceptUnaryPrefixOperatorExpression();
-
-            const new_expr = Ast.Node{
-                .binary_operator = .{
-                    .operator = switch (operator.type) {
-                        .@"*" => .multiply,
-                        .@"/" => .divide,
-                        .@"%" => .modulus,
-                        else => unreachable,
-                    },
-                    .lhs = try self.moveToHeap(expr),
-                    .rhs = try self.moveToHeap(rhs),
-                },
+            const new_value = switch (operator.type) {
+                .@"*" => value * rhs,
+                .@"/" => value / rhs,
+                .@"%" => @mod(value, rhs),
+                else => unreachable,
             };
-            expr = new_expr;
+            value = new_value;
         }
-        return expr;
+        return value;
     }
 
-    fn acceptUnaryPrefixOperatorExpression(self: *Self) Error!Ast.Node {
+    fn acceptUnaryPrefixOperatorExpression(self: *Self) Error!f64 {
         const state = self.core.saveState();
         errdefer self.core.restoreState(state);
 
         if (self.core.accept(comptime ruleset.is(.@"-"))) |_| {
             // this must directly recurse as we can write `- - x`
             const value = try self.acceptUnaryPrefixOperatorExpression();
-            return Ast.Node{
-                .unary_operator = .{
-                    .operator = .negate,
-                    .value = try self.moveToHeap(value),
-                },
-            };
+            return -value;
         } else |_| {
             return try self.acceptFunctionCallExpression();
         }
     }
 
-    fn acceptFunctionCallExpression(self: *Self) Error!Ast.Node {
+    fn acceptFunctionCallExpression(self: *Self) Error!f64 {
         const state = self.core.saveState();
         errdefer self.core.restoreState(state);
 
@@ -385,45 +288,36 @@ const Parser = struct {
         }
     }
 
-    fn acceptFunctionCall(self: *Self) Error!Ast.Node {
+    fn acceptFunctionCall(self: *Self) Error!f64 {
         const state = self.core.saveState();
         errdefer self.core.restoreState(state);
 
         const name = try self.core.accept(comptime ruleset.is(.identifier));
         _ = try self.core.accept(comptime ruleset.is(.@"("));
 
-        var arglist = std.ArrayList(Ast.Node).init(self.arena);
-        errdefer arglist.deinit();
+        var args: [64]f64 = undefined;
+        var argc: usize = 0;
 
         const no_arg_terminator = try self.core.peek();
         if (no_arg_terminator != null and no_arg_terminator.?.type == .@")") {
             _ = try self.core.accept(comptime ruleset.is(.@")"));
-            return Ast.Node{
-                .function_invocation = .{
-                    .function = try self.arena.dupe(u8, name.text),
-                    .arguments = arglist.toOwnedSlice(),
-                },
-            };
+            return try self.ctx.call(name.text, args[0..argc]);
         }
 
         while (true) {
             const arg = try self.acceptExpression();
-            try arglist.append(arg);
+            args[argc] = arg;
+            argc += 1;
 
             const next = try self.core.accept(comptime ruleset.oneOf(.{ .@")", .@"," }));
             if (next.type == .@")")
                 break;
         }
 
-        return Ast.Node{
-            .function_invocation = .{
-                .function = try self.arena.dupe(u8, name.text),
-                .arguments = arglist.toOwnedSlice(),
-            },
-        };
+        return try self.ctx.call(name.text, args[0..argc]);
     }
 
-    fn acceptValueExpression(self: *Self) Error!Ast.Node {
+    fn acceptValueExpression(self: *Self) Error!f64 {
         const state = self.core.saveState();
         errdefer self.core.restoreState(state);
 
@@ -438,15 +332,8 @@ const Parser = struct {
                 _ = try self.core.accept(comptime ruleset.is(.@")"));
                 return value;
             },
-            .number => {
-                const val = std.fmt.parseFloat(f64, token.text) catch unreachable;
-                return Ast.Node{
-                    .number = val,
-                };
-            },
-            .identifier => return Ast.Node{
-                .variable = try self.arena.dupe(u8, token.text),
-            },
+            .number => return std.fmt.parseFloat(f64, token.text) catch unreachable,
+            .identifier => return self.ctx.get(token.text) orelse error.VariableNotFound,
             else => unreachable,
         }
     }
