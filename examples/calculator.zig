@@ -17,6 +17,7 @@ pub fn main() !void {
     defer calc.deinit();
 
     try calc.set("pi", std.math.pi);
+    try calc.set("e", std.math.e);
 
     main_loop: while (true) {
         try stdout.writeAll("? ");
@@ -116,6 +117,18 @@ const Calculator = struct {
         }
         pub fn pow(a: f64, b: f64) f64 {
             return std.math.pow(f64, a, b);
+        }
+        pub fn ln(v: f64) f64 {
+            return std.math.ln(v);
+        }
+        pub fn ln10(v: f64) f64 {
+            return std.math.log10(v);
+        }
+        pub fn ln2(v: f64) f64 {
+            return std.math.log2(v);
+        }
+        pub fn log(b: f64, v: f64) f64 {
+            return std.math.log(f64, b, v);
         }
     };
 };
