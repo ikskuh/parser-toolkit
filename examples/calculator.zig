@@ -217,8 +217,6 @@ const Parser = struct {
     const Pattern = ptk.Pattern(TokenType);
 
     const Tokenizer = ptk.Tokenizer(TokenType, &[_]Pattern{
-        Pattern.create(.number, ptk.matchers.sequenceOf(.{ ptk.matchers.literal("-"), ptk.matchers.decimalNumber, ptk.matchers.literal("."), ptk.matchers.decimalNumber })),
-        Pattern.create(.number, ptk.matchers.sequenceOf(.{ ptk.matchers.literal("-"), ptk.matchers.decimalNumber })),
         Pattern.create(.number, ptk.matchers.sequenceOf(.{ ptk.matchers.decimalNumber, ptk.matchers.literal("."), ptk.matchers.decimalNumber })),
         Pattern.create(.number, ptk.matchers.decimalNumber),
         Pattern.create(.identifier, ptk.matchers.identifier),
