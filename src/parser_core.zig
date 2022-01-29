@@ -31,8 +31,8 @@ pub fn ParserCore(comptime TokenizerT: type, comptime ignore_list: anytype) type
             };
         }
 
-        /// Yields the next unfiltered token
-        fn nextToken(self: *Self) !?Token {
+        /// Yields the next filtered token
+        pub fn nextToken(self: *Self) !?Token {
             while (try self.tokenizer.next()) |tok| {
                 if (std.mem.indexOfScalar(TokenType, &ignore_array, tok.type) == null)
                     return tok;

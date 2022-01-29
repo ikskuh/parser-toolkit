@@ -133,6 +133,7 @@ pub const matchers = struct {
             }
         }.match;
     }
+
     /// Takes characters while they are any of the given `chars`.
     pub fn takeAnyOfIgnoreCase(comptime chars: []const u8) Matcher {
         const lower_chars = comptime blk: {
@@ -145,6 +146,20 @@ pub const matchers = struct {
                 for (str) |c, i| {
                     const lc = std.ascii.toLower(c);
                     if (std.mem.indexOfScalar(u8, lower_chars, lc) == null) {
+                        return i;
+                    }
+                }
+                return str.len;
+            }
+        }.match;
+    }
+
+    /// Takes characters while they are not any of the given `chars`.
+    pub fn takeNoneOf(comptime chars: []const u8) Matcher {
+        return struct {
+            fn match(str: []const u8) ?usize {
+                for (str) |c, i| {
+                    if (std.mem.indexOfScalar(u8, chars, c) != null) {
                         return i;
                     }
                 }
