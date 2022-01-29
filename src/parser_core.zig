@@ -84,7 +84,7 @@ pub fn RuleSet(comptime TokenType: type) type {
 
         /// Returns a rule that matches one of the given token types.
         /// Usage: `expect(oneOf(.{ .foo, .bar }))`
-        pub fn oneOf(types: anytype) Rule {
+        pub fn oneOf(comptime types: anytype) Rule {
             const types_array: [types.len]TokenType = types;
             return struct {
                 fn f(t: TokenType) bool {
