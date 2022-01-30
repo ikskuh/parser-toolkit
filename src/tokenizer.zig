@@ -38,12 +38,12 @@ pub fn Tokenizer(comptime TokenTypeT: type, comptime patterns: []const Pattern(T
         offset: usize,
         current_location: Location,
 
-        pub fn init(source: []const u8) Self {
+        pub fn init(source: []const u8, file_name: ?[]const u8) Self {
             return Self{
                 .source = source,
                 .offset = 0,
                 .current_location = Location{
-                    .source = null,
+                    .source = file_name,
                     .line = 1,
                     .column = 1,
                 },

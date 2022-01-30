@@ -14,6 +14,9 @@ pub const matchers = tok.matchers;
 pub const ParserCore = pcore.ParserCore;
 pub const RuleSet = pcore.RuleSet;
 
+pub const Error = @import("Error.zig");
+pub const Diagnostics = @import("Diagnostics.zig");
+
 test {
     _ = Location;
     _ = tok;

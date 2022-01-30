@@ -2,6 +2,8 @@ const std = @import("std");
 
 const Location = @This();
 
+pub const empty = Location{ .source = null, .line = 0, .column = 0 };
+
 source: ?[]const u8 = null,
 line: u32,
 column: u32,
