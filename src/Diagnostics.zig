@@ -44,3 +44,19 @@ pub fn emit(self: *Self, location: Location, level: Error.Level, comptime fmt: [
         .message = str,
     });
 }
+
+pub fn hasErrors(self: Self) bool {
+    for (self.errors.items) |err| {
+        if (err.level == .@"error")
+            return true;
+    }
+    return false;
+}
+
+pub fn hasWarnings(self: Self) bool {
+    for (self.errors.items) |err| {
+        if (err.level == .@"warning")
+            return true;
+    }
+    return false;
+}
