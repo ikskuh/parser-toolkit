@@ -256,7 +256,7 @@ const TestTokenizer = Tokenizer(TestTokenType, &[_]TestPattern{
 test "simple tokenization" {
     var tokenizer = TestTokenizer.init(
         \\10hellowhile10while
-    );
+    , null);
     const number0 = (try tokenizer.next()) orelse return error.MissingToken;
     const identifier = (try tokenizer.next()) orelse return error.MissingToken;
     const number1 = (try tokenizer.next()) orelse return error.MissingToken;
@@ -283,7 +283,7 @@ test "simple tokenization" {
 test "invalid character" {
     var tokenizer = TestTokenizer.init(
         \\hello!
-    );
+    , null);
     const identifier = (try tokenizer.next()) orelse return error.MissingToken;
     try std.testing.expectEqual(TestTokenType.identifier, identifier.type);
     try std.testing.expectEqualStrings("hello", identifier.text);
@@ -296,7 +296,7 @@ test "save/restore tokenization" {
     var tokenizer = TestTokenizer.init(
         \\hello
         \\world
-    );
+    , null);
 
     const id0 = (try tokenizer.next()) orelse return error.MissingToken;
     var state = tokenizer.saveState();

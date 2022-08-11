@@ -5,7 +5,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    const allocator = &gpa.allocator;
+    const allocator = gpa.allocator();
 
     var line_buffer = std.ArrayList(u8).init(allocator);
     defer line_buffer.deinit();
@@ -42,7 +42,7 @@ const Calculator = struct {
     arena: std.heap.ArenaAllocator,
     variables: std.StringHashMapUnmanaged(f64),
 
-    pub fn init(allocator: *std.mem.Allocator) Self {
+    pub fn init(allocator: std.mem.Allocator) Self {
         return Self{
             .arena = std.heap.ArenaAllocator.init(allocator),
             .variables = .{},
@@ -50,16 +50,16 @@ const Calculator = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.variables.deinit(&self.arena.allocator);
+        self.variables.deinit(self.arena.allocator());
         self.arena.deinit();
         self.* = undefined;
     }
 
     pub fn set(self: *Self, name: []const u8, value: f64) !void {
-        const gop = try self.variables.getOrPut(&self.arena.allocator, name);
+        const gop = try self.variables.getOrPut(self.arena.allocator(), name);
         if (!gop.found_existing) {
             errdefer _ = self.variables.remove(name);
-            gop.key_ptr.* = try self.arena.allocator.dupe(u8, name);
+            gop.key_ptr.* = try self.arena.allocator().dupe(u8, name);
         }
         gop.value_ptr.* = value;
     }
@@ -75,10 +75,10 @@ const Calculator = struct {
     const EvalError = error{ UnknownFunction, ArgumentMismatch };
 
     fn invokeFunction(self: *Self, func_name: []const u8, args: []const f64) EvalError!f64 {
-        inline for (std.meta.declarations(builtin_functions)) |decl| {
+        inline for (comptime std.meta.declarations(builtin_functions)) |decl| {
             if (std.mem.eql(u8, decl.name, func_name)) {
-                const FnType = decl.data.Fn.fn_type;
                 const function = @field(builtin_functions, decl.name);
+                const FnType = @TypeOf(function);
                 return try self.invokeExplicitFunction(FnType, function, args);
             }
         }
@@ -188,7 +188,7 @@ const Parser = struct {
     };
 
     pub fn parse(context: ExpressionContext, expression: []const u8) !f64 {
-        var tokenizer = Tokenizer.init(expression);
+        var tokenizer = Tokenizer.init(expression, null);
 
         var parser = Parser{
             .core = ParserCore.init(&tokenizer),

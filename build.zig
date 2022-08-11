@@ -15,7 +15,7 @@ pub fn build(b: *std.build.Builder) void {
 
     calculator_example.addPackage(.{
         .name = "parser-toolkit",
-        .path = .{ .path = "src/main.zig" },
+        .source = .{ .path = "src/main.zig" },
     });
 
     const calculator_runner = calculator_example.run();
