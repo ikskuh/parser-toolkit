@@ -3,7 +3,7 @@ const std = @import("std");
 const Location = @import("Location.zig");
 const GenericToken = @import("token.zig").Token;
 
-pub const Matcher = fn (str: []const u8) ?usize;
+pub const Matcher = std.meta.FnPtr(fn (str: []const u8) ?usize);
 
 pub fn Pattern(comptime TokenType: type) type {
     return struct {
