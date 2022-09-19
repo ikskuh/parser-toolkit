@@ -65,6 +65,23 @@ pub fn adavance(self: *Location, str: []const u8) void {
     }
 }
 
+pub fn format(location: Location, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    _ = fmt;
+    _ = options;
+    if (location.source) |source_file| {
+        try writer.print("{s}:{d}:{d}", .{
+            source_file,
+            location.line,
+            location.column,
+        });
+    } else {
+        try writer.print("{d}:{d}", .{
+            location.line,
+            location.column,
+        });
+    }
+}
+
 test "min" {
     const a = Location{ .source = "source", .line = 10, .column = 30 };
     const b = Location{ .source = "source", .line = 10, .column = 40 };
