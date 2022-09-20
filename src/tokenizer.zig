@@ -80,7 +80,7 @@ pub fn Tokenizer(comptime TokenTypeT: type, comptime patterns: []const Pattern(T
             } else null;
             if (maybe_token) |token| {
                 self.offset += token.text.len;
-                self.current_location.adavance(token.text);
+                self.current_location.advance(token.text);
                 return token;
             } else {
                 return error.UnexpectedCharacter;

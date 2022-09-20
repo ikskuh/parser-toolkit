@@ -54,7 +54,7 @@ pub fn max(a: Location, b: Location) Location {
     return loc;
 }
 
-pub fn adavance(self: *Location, str: []const u8) void {
+pub fn advance(self: *Location, str: []const u8) void {
     for (str) |c| {
         if (c == '\n') {
             self.line += 1;
