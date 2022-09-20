@@ -16,6 +16,7 @@ pub const RuleSet = pcore.RuleSet;
 
 pub const Error = @import("Error.zig");
 pub const Diagnostics = @import("Diagnostics.zig");
+pub const StringCache = @import("StringCache.zig");
 
 test {
     _ = Location;
