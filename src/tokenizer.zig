@@ -3,7 +3,7 @@ const std = @import("std");
 const Location = @import("Location.zig");
 const GenericToken = @import("token.zig").Token;
 
-pub const Matcher = std.meta.FnPtr(fn (str: []const u8) ?usize);
+pub const Matcher = *const fn (str: []const u8) ?usize;
 
 pub fn Pattern(comptime TokenType: type) type {
     return struct {
@@ -110,7 +110,7 @@ pub const matchers = struct {
                     if (text.len == input.len)
                         return text.len;
                     const c = input[text.len];
-                    if (std.ascii.isAlNum(c) or (c == '_')) // matches regex \w\W
+                    if (std.ascii.isAlphanumeric(c) or (c == '_')) // matches regex \w\W
                         return null;
                     return text.len;
                 }
@@ -213,7 +213,7 @@ pub const matchers = struct {
 
     pub fn whitespace(str: []const u8) ?usize {
         for (str) |c, i| {
-            if (!std.ascii.isSpace(c))
+            if (!std.ascii.isWhitespace(c))
                 return i;
         }
         return str.len;

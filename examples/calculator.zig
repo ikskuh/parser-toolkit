@@ -99,7 +99,7 @@ const Calculator = struct {
             args[i] = arg_vals[i];
         }
 
-        return @call(.{}, function, args);
+        return @call(.auto, function, args);
     }
 
     const builtin_functions = struct {
