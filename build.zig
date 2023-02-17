@@ -1,23 +1,27 @@
 const std = @import("std");
 
 pub fn build(b: *std.build.Builder) void {
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
 
-    var main_tests = b.addTest("src/main.zig");
-    main_tests.setBuildMode(mode);
+    var main_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/main.zig" },
+        .optimize = optimize,
+    });
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);
 
-    const calculator_example = b.addExecutable("calculator", "examples/calculator.zig");
-    calculator_example.setBuildMode(mode);
-    calculator_example.install();
-
-    calculator_example.addPackage(.{
-        .name = "parser-toolkit",
-        .source = .{ .path = "src/main.zig" },
+    const calculator_example = b.addExecutable(.{
+        .root_source_file = .{ .path = "examples/calculator.zig" },
+        .name = "calculator",
+        .optimize = optimize,
     });
 
-    const calculator_runner = calculator_example.run();
-    b.step("run", "Runs the calculator example").dependOn(&calculator_runner.step);
+    calculator_example.install();
+    calculator_example.addAnonymousModule("parser-toolkit", .{
+        .source_file = .{ .path = "src/main.zig" },
+    });
+
+    const runner = calculator_example.run();
+    b.step("run", "Runs the calculator example").dependOn(&runner.step);
 }
