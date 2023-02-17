@@ -3,6 +3,12 @@ const std = @import("std");
 pub fn build(b: *std.build.Builder) void {
     const optimize = b.standardOptimizeOption(.{});
 
+    b.addModule(.{
+        .name = "parser-toolkit",
+        .source_file = .{ .path = "src/main.zig" },
+        .dependencies = &.{},
+    });
+
     var main_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
         .optimize = optimize,
