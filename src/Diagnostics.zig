@@ -55,7 +55,7 @@ pub fn hasErrors(self: Self) bool {
 
 pub fn hasWarnings(self: Self) bool {
     for (self.errors.items) |err| {
-        if (err.level == .@"warning")
+        if (err.level == .warning)
             return true;
     }
     return false;

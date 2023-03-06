@@ -24,7 +24,7 @@ pub fn ParserCore(comptime TokenizerT: type, comptime ignore_list: anytype) type
 
         /// Create a new parser core based on the tokenizer given.
         /// The core will only reference the Tokenizer and will modify
-        /// it's state. 
+        /// it's state.
         pub fn init(tokenizer: *Tokenizer) Self {
             return Self{
                 .tokenizer = tokenizer,
@@ -46,13 +46,13 @@ pub fn ParserCore(comptime TokenizerT: type, comptime ignore_list: anytype) type
         }
 
         /// Restores a previously saved state. This will rewind any parsing done
-        /// since the 
+        /// since the
         pub fn restoreState(self: *Self, state: State) void {
             self.tokenizer.restoreState(state);
         }
 
         pub const AcceptError = error{ EndOfStream, UnexpectedToken } || Tokenizer.NextError;
-        /// Accepts a token that matches `rule`. Otherwise returns 
+        /// Accepts a token that matches `rule`. Otherwise returns
         /// - `error.EndOfStream` when no tokens are available
         /// - `error.UnexpectedToken` when an invalid token was encountered
         pub fn accept(self: *Self, comptime rule: Rule) AcceptError!Token {
