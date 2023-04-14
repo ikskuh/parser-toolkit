@@ -14,7 +14,7 @@ pub fn build(b: *std.build.Builder) void {
     });
 
     const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&main_tests.step);
+    test_step.dependOn(&b.addRunArtifact(main_tests).step);
 
     const calculator_example = b.addExecutable(.{
         .root_source_file = .{ .path = "examples/calculator.zig" },
@@ -22,11 +22,10 @@ pub fn build(b: *std.build.Builder) void {
         .optimize = optimize,
     });
 
-    calculator_example.install();
+    b.installArtifact(calculator_example);
     calculator_example.addAnonymousModule("parser-toolkit", .{
         .source_file = .{ .path = "src/main.zig" },
     });
 
-    const runner = calculator_example.run();
-    b.step("run", "Runs the calculator example").dependOn(&runner.step);
+    b.step("run", "Runs the calculator example").dependOn(&b.addRunArtifact(calculator_example).step);
 }
