@@ -26,7 +26,7 @@ pub fn min(a: Location, b: Location) Location {
         loc.column = b.column;
     } else {
         loc.line = a.line;
-        loc.column = std.math.min(a.column, b.column);
+        loc.column = @min(a.column, b.column);
     }
     return loc;
 }
@@ -49,7 +49,7 @@ pub fn max(a: Location, b: Location) Location {
         loc.column = b.column;
     } else {
         loc.line = a.line;
-        loc.column = std.math.max(a.column, b.column);
+        loc.column = @max(a.column, b.column);
     }
     return loc;
 }
