@@ -119,7 +119,7 @@ const Calculator = struct {
             return std.math.pow(f64, a, b);
         }
         pub fn ln(v: f64) f64 {
-            return std.math.ln(v);
+            return @log(v);
         }
         pub fn ln10(v: f64) f64 {
             return std.math.log10(v);
