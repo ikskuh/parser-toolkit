@@ -32,8 +32,6 @@ pub fn Tokenizer(comptime TokenTypeT: type, comptime patterns: []const Pattern(T
             location: Location,
         };
 
-        pub const Error = NextError;
-
         source: []const u8,
         offset: usize,
         current_location: Location,
