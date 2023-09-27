@@ -18,7 +18,7 @@ pub fn ParserCore(comptime TokenizerT: type, comptime ignore_list: anytype) type
 
         pub const State = Tokenizer.State;
 
-        pub const Error = AcceptError || Tokenizer.Error;
+        pub const Error = AcceptError;
 
         tokenizer: *Tokenizer,
 
