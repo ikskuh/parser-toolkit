@@ -18,6 +18,10 @@ pub const Error = @import("Error.zig");
 pub const Diagnostics = @import("Diagnostics.zig");
 pub const StringCache = @import("StringCache.zig");
 
+pub const testing = struct {
+    pub const validateMatcher = tok.testMatcher;
+};
+
 test {
     _ = Location;
     _ = tok;

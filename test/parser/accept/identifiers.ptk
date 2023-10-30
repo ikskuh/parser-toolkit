@@ -1,0 +1,8 @@
+
+rule a                  = literal `whatever`;
+rule _                  = literal `whatever`;
+rule a0                 = literal `whatever`;
+rule a-z                = literal `whatever`;
+rule _10                = literal `whatever`;
+rule @"x"               = literal `whatever`;
+rule @"hello, world!"   = literal `whatever`;

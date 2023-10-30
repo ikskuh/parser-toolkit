@@ -3,7 +3,9 @@ const std = @import("std");
 const Location = @import("Location.zig");
 const GenericToken = @import("token.zig").Token;
 
-pub const Matcher = *const fn (str: []const u8) ?usize;
+/// This is a function that will either accept a `text` as a token
+/// of a non-zero length or returns `0` if the text does not match the token.
+pub const Matcher = *const fn (text: []const u8) usize;
 
 pub fn Pattern(comptime TokenType: type) type {
     return struct {
@@ -66,14 +68,13 @@ pub fn Tokenizer(comptime TokenTypeT: type, comptime patterns: []const Pattern(T
             if (rest.len == 0)
                 return null;
             const maybe_token = for (patterns) |pat| {
-                if (pat.match(rest)) |len| {
-                    if (len > 0) {
-                        break Token{
-                            .location = self.current_location,
-                            .text = rest[0..len],
-                            .type = pat.type,
-                        };
-                    }
+                const len = pat.match(rest);
+                if (len > 0) {
+                    break Token{
+                        .location = self.current_location,
+                        .text = rest[0..len],
+                        .type = pat.type,
+                    };
                 }
             } else null;
             if (maybe_token) |token| {
@@ -91,11 +92,11 @@ pub const matchers = struct {
     /// Matches the literal `text`.
     pub fn literal(comptime text: []const u8) Matcher {
         return struct {
-            fn match(str: []const u8) ?usize {
+            fn match(str: []const u8) usize {
                 return if (std.mem.startsWith(u8, str, text))
                     text.len
                 else
-                    null;
+                    0;
             }
         }.match;
     }
@@ -103,17 +104,17 @@ pub const matchers = struct {
     /// Matches any "word" that is "text\b"
     pub fn word(comptime text: []const u8) Matcher {
         return struct {
-            fn match(input: []const u8) ?usize {
+            fn match(input: []const u8) usize {
                 if (std.mem.startsWith(u8, input, text)) {
                     if (text.len == input.len)
                         return text.len;
                     const c = input[text.len];
                     if (std.ascii.isAlphanumeric(c) or (c == '_')) // matches regex \w\W
-                        return null;
+                        return 0;
                     return text.len;
                 }
 
-                return null;
+                return 0;
             }
         }.match;
     }
@@ -121,7 +122,7 @@ pub const matchers = struct {
     /// Takes characters while they are any of the given `chars`.
     pub fn takeAnyOf(comptime chars: []const u8) Matcher {
         return struct {
-            fn match(str: []const u8) ?usize {
+            fn match(str: []const u8) usize {
                 for (str, 0..) |c, i| {
                     if (std.mem.indexOfScalar(u8, chars, c) == null) {
                         return i;
@@ -140,7 +141,7 @@ pub const matchers = struct {
         };
 
         return struct {
-            fn match(str: []const u8) ?usize {
+            fn match(str: []const u8) usize {
                 for (str, 0..) |c, i| {
                     const lc = std.ascii.toLower(c);
                     if (std.mem.indexOfScalar(u8, lower_chars, lc) == null) {
@@ -155,7 +156,7 @@ pub const matchers = struct {
     /// Takes characters while they are not any of the given `chars`.
     pub fn takeNoneOf(comptime chars: []const u8) Matcher {
         return struct {
-            fn match(str: []const u8) ?usize {
+            fn match(str: []const u8) usize {
                 for (str, 0..) |c, i| {
                     if (std.mem.indexOfScalar(u8, chars, c) != null) {
                         return i;
@@ -168,10 +169,12 @@ pub const matchers = struct {
 
     pub fn withPrefix(comptime prefix: []const u8, comptime matcher: Matcher) Matcher {
         return struct {
-            fn match(str: []const u8) ?usize {
+            fn match(str: []const u8) usize {
                 if (!std.mem.startsWith(u8, str, prefix))
-                    return null;
-                const pattern_len = matcher(str[prefix.len..]) orelse return null;
+                    return 0;
+                const pattern_len = matcher(str[prefix.len..]);
+                if (pattern_len == 0)
+                    return 0;
                 return prefix.len + pattern_len;
             }
         }.match;
@@ -183,12 +186,12 @@ pub const matchers = struct {
         if (sequence.len == 0)
             @compileError("Empty sequence not allowed!");
         return struct {
-            fn match(input: []const u8) ?usize {
+            fn match(input: []const u8) usize {
                 var total_len: usize = 0;
                 for (sequence) |seq_match| {
-                    const len = seq_match(input[total_len..]) orelse return null;
+                    const len = seq_match(input[total_len..]);
                     if (len == 0)
-                        return null;
+                        return 0;
                     total_len += len;
                 }
                 return total_len;
@@ -198,7 +201,7 @@ pub const matchers = struct {
 
     // pre-shipped typical patterns
 
-    pub fn identifier(str: []const u8) ?usize {
+    pub fn identifier(str: []const u8) usize {
         const first_char = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
         const all_chars = first_char ++ "0123456789";
         for (str, 0..) |c, i| {
@@ -209,7 +212,7 @@ pub const matchers = struct {
         return str.len;
     }
 
-    pub fn whitespace(str: []const u8) ?usize {
+    pub fn whitespace(str: []const u8) usize {
         for (str, 0..) |c, i| {
             if (!std.ascii.isWhitespace(c))
                 return i;
@@ -217,12 +220,12 @@ pub const matchers = struct {
         return str.len;
     }
 
-    pub fn linefeed(str: []const u8) ?usize {
+    pub fn linefeed(str: []const u8) usize {
         if (std.mem.startsWith(u8, str, "\r\n"))
             return 2;
         if (std.mem.startsWith(u8, str, "\n"))
             return 1;
-        return null;
+        return 0;
     }
 
     pub fn numberOfBase(comptime base: comptime_int) Matcher {
@@ -321,12 +324,11 @@ test "save/restore tokenization" {
     try std.testing.expectEqual(Location{ .source = null, .line = 2, .column = 1 }, id1.location);
 }
 
-fn testMatcher(match: Matcher, good: []const []const u8, bad: []const []const u8) !void {
+pub fn testMatcher(match: Matcher, good: []const []const u8, bad: []const []const u8) !void {
+    std.debug.assert(good.len > 0);
+    std.debug.assert(bad.len > 0);
     for (good) |str| {
-        const v = match(str) orelse {
-            std.log.err("Didn't match pattern '{s}'", .{str});
-            return error.MissedGoodPattern;
-        };
+        const v = match(str);
         if (v == 0) {
             std.log.err("Didn't match pattern '{s}'", .{str});
             return error.MissedGoodPattern;
@@ -334,7 +336,7 @@ fn testMatcher(match: Matcher, good: []const []const u8, bad: []const []const u8
     }
     for (bad) |str| {
         const v = match(str);
-        if (v != null and v.? > 0) {
+        if (v > 0) {
             std.log.err("Matched pattern '{s}'", .{str});
             return error.MissedBadPattern;
         }

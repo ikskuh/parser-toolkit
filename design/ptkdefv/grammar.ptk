@@ -1,0 +1,43 @@
+
+
+root <document>; # <...> is a "rule reference"
+
+token identifier = regex "[A-Za-z_][A-Za-z0-9_]*"; # defines token "identifier" to match this regex
+
+token line-comment = regex "//[^\n]*" skip; # ignores this token when parsing, but tokenizer recognizes it
+token whitespace = regex "[ \t\r\n]" skip;
+
+rule document =
+    # [ ... ] is a loop construct, can appear several times
+    [ <using> ] <namespace-decl> [ <toplevel-decl> ]*
+;
+
+rule toplevel-decl = 
+    # | is a "either/or" scenario, with precedence from left to right (first come, first serve)
+    <namespace-group> | <interface-decl> | <module-decl>
+;
+
+rule interface-decl =
+    "interface" $identifier "(" ... ")" ";";
+;
+
+rule module-decl =
+    "module" $identifier "(" ... ")" "{" ... "}" ";";
+;
+
+rule using =
+    # "bla" is a literal token
+    # $bla is an explicitly defined token reference 
+    # ...? is an optional part of a parse
+    "using" <compound-identifier> ";" ( "as" $identifier )?
+;
+
+rule namespace-decl = 
+    "namespace" <compound-identifier> ";"
+;
+
+rule compound-identifier = 
+    $identifier [ "." $identifier ]*
+;
+
+
