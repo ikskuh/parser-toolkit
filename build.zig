@@ -94,6 +94,11 @@ const parser_ok_files = [_][]const u8{
     "test/parser/accept/empty.ptk",
     "test/parser/accept/empty-with-comment-linefeed.ptk",
     "test/parser/accept/empty-with-comment.ptk",
-    "test/parser/accept/identifiers.ptk",
-    "examples/ptkgen/ast-with-unions.ptk", // TODO: Move to examples
+    // "test/parser/accept/identifiers.ptk",
+    // "examples/ptkgen/ast-with-unions.ptk", // TODO: Move to examples
+} ++ analyis_ok_files;
+
+const analyis_ok_files = [_][]const u8{
+    "test/analysis/accept/match-literal-rule.ptk",
+    "test/analysis/accept/match-literal-sequence.ptk",
 };

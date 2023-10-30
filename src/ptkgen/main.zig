@@ -6,6 +6,7 @@ const std = @import("std");
 const args_parser = @import("args");
 const ptk = @import("parser-toolkit");
 
+const ast = @import("ast.zig");
 const parser = @import("parser.zig");
 
 comptime {
@@ -64,11 +65,11 @@ pub fn main() !u8 {
         return 0;
     }
 
+    var string_pool = try ptk.strings.Pool.init(dynamic_allocator);
+    defer string_pool.deinit();
+
     var diagnostics = ptk.Diagnostics.init(dynamic_allocator);
     defer diagnostics.deinit();
-
-    // From here on, always print the diagnostics on exit!
-    defer diagnostics.print(stderr.writer()) catch {};
 
     var input_file = switch (cli.positionals.len) {
         0 => stdin,
@@ -86,21 +87,172 @@ pub fn main() !u8 {
     };
     defer input_file.close();
 
-    var ast = try parser.parse(
+    const file_name = if (cli.positionals.len > 0)
+        cli.positionals[0]
+    else
+        "stdint";
+
+    compileFile(
         dynamic_allocator,
         &diagnostics,
-        if (cli.positionals.len > 0)
-            cli.positionals[0]
-        else
-            "stdint",
+        &string_pool,
+        input_file,
+        file_name,
+        cli.options.test_mode,
+    ) catch |err| switch (err) {
+        // syntax errors must produce diagnostics:
+        error.SyntaxError => std.debug.assert(diagnostics.hasErrors()),
+
+        error.OutOfMemory => {
+            try diagnostics.emit(.{
+                .source = file_name,
+                .line = 1,
+                .column = 1,
+            }, .@"error", "out of memory", .{});
+        },
+
+        error.StreamTooLong => {
+            try diagnostics.emit(.{
+                .source = file_name,
+                .line = 1,
+                .column = 1,
+            }, .@"error", "input file too large", .{});
+        },
+
+        error.InputOutput,
+        error.AccessDenied,
+        error.BrokenPipe,
+        error.SystemResources,
+        error.OperationAborted,
+        error.WouldBlock,
+        error.ConnectionResetByPeer,
+        error.Unexpected,
+        error.IsDir,
+        error.ConnectionTimedOut,
+        error.NotOpenForReading,
+        error.NetNameDeleted,
+        => {
+            try diagnostics.emit(.{
+                .source = file_name,
+                .line = 1,
+                .column = 1,
+            }, .@"error", "i/o error: {s}", .{@errorName(err)});
+        },
+    };
+
+    try diagnostics.print(stderr.writer());
+
+    return if (diagnostics.hasErrors())
+        1
+    else
+        0;
+}
+
+fn compileFile(
+    allocator: std.mem.Allocator,
+    diagnostics: *ptk.Diagnostics,
+    string_pool: *ptk.strings.Pool,
+    input_file: std.fs.File,
+    file_name: []const u8,
+    mode: TestMode,
+) !void {
+    var tree = try parser.parse(
+        allocator,
+        diagnostics,
+        string_pool,
+        file_name,
         input_file.reader(),
     );
-    defer ast.deinit();
+    defer tree.deinit();
 
-    if (cli.options.test_mode == .parse_only) {
+    dumpAst(string_pool, tree.top_level_declarations);
+
+    if (mode == .parse_only) {
         // we're done if we're here
-        return 0;
+        return;
     }
+}
 
-    return 0;
+fn dumpAst(strings: *const ptk.strings.Pool, decls: ast.List(ast.TopLevelDeclaration)) void {
+    std.debug.print("ast dump:\n", .{});
+
+    var iter = ast.iterate(decls);
+    while (iter.next()) |decl| {
+        switch (decl) {
+            .start => |item| std.debug.print("start {s}\n", .{strings.get(item.identifier)}),
+
+            .rule => |rule| {
+                std.debug.print("rule {s}", .{strings.get(rule.name.value)});
+
+                if (rule.ast_type) |ast_type| {
+                    std.debug.print(" : ", .{});
+                    dumpAstType(strings, ast_type);
+                }
+
+                std.debug.print(" = \n", .{});
+
+                var prods = ast.iterate(rule.productions);
+                var first = true;
+                while (prods.next()) |prod| {
+                    defer first = false;
+                    if (!first) {
+                        std.debug.print("  | ", .{});
+                    } else {
+                        std.debug.print("    ", .{});
+                    }
+                    dumpMappedProd(strings, prod);
+                }
+
+                std.debug.print("\n;\n", .{});
+            },
+
+            .node => |node| {
+                std.debug.print("node {s}", .{strings.get(node.name.value)});
+
+                std.debug.print(";\n", .{});
+            },
+        }
+    }
+}
+
+fn dumpAstType(strings: *const ptk.strings.Pool, typespec: ast.TypeSpec) void {
+    _ = strings;
+    _ = typespec;
+    std.debug.print("<TYPE HERE>", .{});
+}
+
+fn dumpMappedProd(strings: *const ptk.strings.Pool, mapped_prod: ast.MappedProduction) void {
+    dumpProd(strings, mapped_prod.production);
+
+    if (mapped_prod.mapping) |mapping| {
+        dumpMapping(strings, mapping);
+    }
+}
+
+fn dumpProd(strings: *const ptk.strings.Pool, production: ast.Production) void {
+    switch (production) {
+        .literal => |lit| std.debug.print("\"{}\"", .{std.zig.fmtEscapes(strings.get(lit.value))}),
+        .terminal => |term| std.debug.print("<{}>", .{std.zig.fmtId(strings.get(term.identifier))}),
+        .recursion => std.debug.print("<recursion>", .{}),
+        .sequence => |seq| {
+            std.debug.print("(", .{});
+
+            var iter = ast.iterate(seq);
+            while (iter.next()) |item| {
+                std.debug.print(" ", .{});
+                dumpProd(strings, item);
+            }
+
+            std.debug.print(" )", .{});
+        },
+        .optional => std.debug.print("<optional>", .{}),
+        .repetition_zero => std.debug.print("<repetition_zero>", .{}),
+        .repetition_one => std.debug.print("<repetition_one>", .{}),
+    }
+}
+
+fn dumpMapping(strings: *const ptk.strings.Pool, mapping: ast.AstMapping) void {
+    _ = strings;
+    _ = mapping;
+    std.debug.print("<MAPPING HERE>", .{});
 }

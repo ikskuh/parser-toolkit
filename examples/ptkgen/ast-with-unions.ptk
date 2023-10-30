@@ -12,8 +12,8 @@ node declaration = struct
 ;
 
 node identifier = literal `[]const u8`;
-node type = custom `TypeId`; # enum { int, float, string }
-node value = custom `Value`;
+node type = @TypeId; # enum { int, float, string }
+node value = @Value;
 
 start <decl>;
 
@@ -32,7 +32,7 @@ rule <decl-type> : literal `bool` =
     | "const" => `true`
 ;
 
-rule <id> : !identifier = "name" => tostring $0;
+rule <id> : !identifier = "name" => tostring($0);
 
 rule <type> : !type = 
       "int"    => `.int`

@@ -17,13 +17,15 @@ pub const RuleSet = pcore.RuleSet;
 pub const Error = @import("Error.zig");
 pub const Diagnostics = @import("Diagnostics.zig");
 pub const StringCache = @import("StringCache.zig");
+pub const strings = @import("strings.zig");
 
 pub const testing = struct {
     pub const validateMatcher = tok.testMatcher;
 };
 
-test {
+comptime {
     _ = Location;
     _ = tok;
     _ = pcore;
+    _ = strings;
 }

@@ -52,6 +52,7 @@ pub fn ParserCore(comptime TokenizerT: type, comptime ignore_list: anytype) type
         }
 
         pub const AcceptError = error{ EndOfStream, UnexpectedToken } || Tokenizer.NextError;
+
         /// Accepts a token that matches `rule`. Otherwise returns
         /// - `error.EndOfStream` when no tokens are available
         /// - `error.UnexpectedToken` when an invalid token was encountered

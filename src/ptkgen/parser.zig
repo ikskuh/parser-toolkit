@@ -1,5 +1,8 @@
 const std = @import("std");
 const ptk = @import("parser-toolkit");
+const ast = @import("ast.zig");
+
+const fmtEscapes = std.zig.fmtEscapes;
 
 pub const Document = struct {
     arena: std.heap.ArenaAllocator,
@@ -7,13 +10,15 @@ pub const Document = struct {
     file_name: []const u8,
     source_text: []const u8,
 
+    top_level_declarations: ast.Document,
+
     pub fn deinit(ts: *Document) void {
         ts.arena.deinit();
         ts.* = undefined;
     }
 };
 
-pub fn parse(allocator: std.mem.Allocator, diagnostics: *ptk.Diagnostics, file_name: []const u8, stream: anytype) !Document {
+pub fn parse(allocator: std.mem.Allocator, diagnostics: *ptk.Diagnostics, string_pool: *ptk.strings.Pool, file_name: []const u8, stream: anytype) !Document {
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
 
@@ -23,31 +28,54 @@ pub fn parse(allocator: std.mem.Allocator, diagnostics: *ptk.Diagnostics, file_n
 
     var tokenizer = Tokenizer.init(text, file_name_copy);
 
-    while (true) {
-        const token_or_none = tokenizer.next() catch |err| switch (err) {
-            error.UnexpectedCharacter => {
-                try diagnostics.emit(tokenizer.current_location, .@"error", "Unexpected character: '{}'", .{
-                    std.zig.fmtEscapes(tokenizer.source[tokenizer.offset..][0..1]),
-                });
-                return error.SyntaxError;
-            },
+    var parser = Parser{
+        .core = ParserCore.init(&tokenizer),
+        .arena = arena.allocator(),
+        .pool = string_pool,
+        .diagnostics = diagnostics,
+    };
 
-            else => |e| return e,
-        };
-        const token = token_or_none orelse break;
+    const document_node = parser.acceptDocument() catch |err| switch (err) {
+        error.UnexpectedCharacter => {
+            try diagnostics.emit(tokenizer.current_location, .@"error", "Unexpected character: '{}'", .{
+                fmtEscapes(tokenizer.source[tokenizer.offset..][0..1]),
+            });
+            return error.SyntaxError;
+        },
 
-        std.log.info("token: {}", .{token});
+        error.EndOfStream, error.UnexpectedToken => @panic("Error handling is fucked up, something escaped"),
+
+        // Unrecoverable syntax error, must have created diagnostics already
+        error.SyntaxError => |e| {
+            std.debug.assert(diagnostics.hasErrors());
+            return e;
+        },
+
+        error.OutOfMemory => |e| return e,
+    };
+
+    if (tokenizer.next()) |token_or_null| {
+        if (token_or_null) |token| {
+            try diagnostics.emit(token.location, .@"error", "Excess token at the end of the file: {s}", .{@tagName(token.type)});
+            return error.SyntaxError;
+        }
+    } else |_| {
+        try diagnostics.emit(tokenizer.current_location, .@"error", "Unexpected character: '{}'", .{
+            fmtEscapes(tokenizer.source[tokenizer.offset..][0..1]),
+        });
+        return error.SyntaxError;
     }
 
     return Document{
         .arena = arena,
         .file_name = file_name_copy,
         .source_text = text,
+
+        .top_level_declarations = document_node,
     };
 }
 
 pub const TokenType = enum {
-
     // keywords
 
     node,
@@ -64,7 +92,7 @@ pub const TokenType = enum {
 
     // user values
 
-    raw_identifier, // foo-bar_bam
+    identifier, // foo-bar_bam
     node_ref, // !node
     rule_ref, // <rule>
     token_ref, // $token
@@ -104,12 +132,276 @@ pub const TokenType = enum {
 
 pub const Token = Tokenizer.Token;
 
+const ParserCore = ptk.ParserCore(Tokenizer, .{ .whitespace, .line_comment });
+
+const Parser = struct {
+    const RS = ptk.RuleSet(TokenType);
+    const String = ptk.strings.String;
+
+    core: ParserCore,
+    arena: std.mem.Allocator,
+    pool: *ptk.strings.Pool,
+    diagnostics: *ptk.Diagnostics,
+
+    pub fn acceptDocument(parser: *Parser) !ast.Document {
+        var doc = ast.Document{};
+
+        while (true) {
+            const decl_or_eof = try parser.acceptTopLevelDecl();
+
+            const decl = decl_or_eof orelse break;
+
+            try parser.append(ast.TopLevelDeclaration, &doc, decl);
+        }
+
+        return doc;
+    }
+
+    fn emitDiagnostic(parser: *Parser, loc: ?ptk.Location, comptime fmt: []const u8, args: anytype) !void {
+        // Anything detected here is always an error
+        try parser.diagnostics.emit(loc orelse parser.core.tokenizer.current_location, .@"error", fmt, args);
+    }
+
+    fn acceptTopLevelDecl(parser: *Parser) !?ast.TopLevelDeclaration {
+        if (parser.acceptLiteral(.rule)) |_| {
+            return .{
+                .rule = try parser.acceptRule(),
+            };
+        } else |err| try filterAcceptError(err);
+
+        // Detect any excess tokens on the top level:
+        if (try parser.core.nextToken()) |token| {
+            try parser.emitDiagnostic(null, "Unexpected token '{}'", .{fmtEscapes(token.text)});
+            return error.SyntaxError;
+        }
+
+        return null;
+    }
+
+    fn acceptRule(parser: *Parser) !ast.Rule {
+        var state = parser.save();
+        errdefer parser.restore(state);
+
+        const identifier = try parser.acceptIdentifier();
+
+        const rule_type = if (parser.acceptLiteral(.@":"))
+            try parser.acceptTypeSpec()
+        else |_|
+            null;
+
+        try parser.acceptLiteral(.@"=");
+
+        var list: ast.List(ast.MappedProduction) = .{};
+
+        while (true) {
+            var production = try parser.acceptMappedProduction();
+
+            try parser.append(ast.MappedProduction, &list, production);
+
+            // TODO: Improve error reporting here
+            if (parser.acceptLiteral(.@";")) {
+                break;
+            } else |_| {}
+
+            try parser.acceptLiteral(.@"|");
+        }
+
+        return ast.Rule{
+            .ast_type = rule_type,
+            .productions = list,
+            .name = identifier,
+        };
+    }
+
+    fn acceptMappedProduction(parser: *Parser) !ast.MappedProduction {
+        var sequence = try parser.acceptProductionSequence();
+
+        const mapping = if (parser.acceptLiteral(.@"=>"))
+            try parser.acceptAstMapping()
+        else |_|
+            null;
+
+        return ast.MappedProduction{
+            .production = if (sequence.only()) |item|
+                item
+            else
+                .{ .sequence = sequence },
+            .mapping = mapping,
+        };
+    }
+
+    fn acceptProductionSequence(parser: *Parser) !ast.List(ast.Production) {
+        var list: ast.List(ast.Production) = .{};
+
+        while (true) {
+            if (parser.acceptProduction()) |prod| {
+                try parser.append(ast.Production, &list, prod);
+            } else |err| switch (err) {
+                error.UnexpectedToken => break,
+                else => |e| return e,
+            }
+        }
+
+        return list;
+    }
+
+    fn acceptProduction(parser: *Parser) !ast.Production {
+        const str = try parser.acceptStringLiteral();
+
+        return ast.Production{
+            .literal = str,
+        };
+    }
+
+    fn acceptAstMapping(parser: *Parser) !ast.AstMapping {
+        _ = parser;
+        return error.UnexpectedToken;
+    }
+
+    fn acceptTypeSpec(parser: *Parser) !ast.TypeSpec {
+        _ = parser;
+        return error.UnexpectedToken;
+    }
+
+    fn acceptStringLiteral(parser: *Parser) !ast.StringLiteral {
+        const token = try parser.core.accept(RS.is(.string_literal));
+
+        std.debug.assert(token.text.len >= 2);
+
+        return ast.StringLiteral{
+            .location = token.location,
+            .value = try parser.unwrapString(token.location, token.text[1 .. token.text.len - 1]),
+        };
+    }
+
+    fn acceptIdentifier(parser: *Parser) !ast.Identifier {
+        const token = try parser.core.accept(RS.is(.identifier));
+
+        return ast.Identifier{
+            .location = token.location,
+            .value = try parser.unwrapIdentifierString(token.location, token.text),
+        };
+    }
+
+    fn acceptLiteral(parser: *Parser, comptime token_type: TokenType) !void {
+        _ = try parser.core.accept(RS.is(token_type));
+    }
+
+    // management:
+
+    fn unwrapIdentifierString(parser: *Parser, loc: ptk.Location, raw: []const u8) !ptk.strings.String {
+        std.debug.assert(raw.len > 0);
+        if (raw[0] == '@') {
+            std.debug.assert(raw[1] == '"');
+            std.debug.assert(raw[raw.len - 1] == '"');
+            // string-escaped identifier
+            return try parser.unwrapString(loc, raw[2 .. raw.len - 1]);
+        } else {
+            return try parser.pool.insert(raw);
+        }
+    }
+
+    fn unwrapString(parser: *Parser, loc: ptk.Location, raw: []const u8) !ptk.strings.String {
+        var fallback = std.heap.stackFallback(512, parser.arena);
+
+        var working_space = std.ArrayList(u8).init(fallback.get());
+        defer working_space.deinit();
+
+        var i: usize = 0;
+        while (i < raw.len) {
+            const c = raw[i];
+            if (c == '\\') {
+                i += 1;
+                if (i >= raw.len) {
+                    try parser.emitDiagnostic(loc, "Invalid string escape: Missing escaped character!", .{});
+                    return error.SyntaxError;
+                }
+                const escape = raw[i];
+                const slice = switch (escape) {
+                    'n' => "\n",
+                    'r' => "\r",
+                    '\"' => "\"",
+                    '\'' => "\'",
+                    '\\' => "\\",
+
+                    'x' => @panic("Implement hex escape \\x??"),
+                    'u' => @panic("Implement utf-16 \\u????"),
+                    'U' => @panic("Implement utf-32 \\U????????"),
+
+                    '0'...'3' => @panic("Implement octal escape \\???"),
+
+                    else => {
+                        if (std.ascii.isPrint(c)) {
+                            try parser.emitDiagnostic(loc, "Invalid string escape \\{c}", .{escape});
+                        } else {
+                            try parser.emitDiagnostic(loc, "Invalid string escape \\x{X:0>2}", .{escape});
+                        }
+                        return error.SyntaxError;
+                    },
+                };
+                try working_space.appendSlice(slice);
+            } else {
+                try working_space.append(c);
+            }
+            i += 1;
+        }
+
+        return try parser.pool.insert(working_space.items);
+    }
+
+    fn save(parser: Parser) ParserCore.State {
+        return parser.core.saveState();
+    }
+
+    fn restore(parser: *Parser, state: ParserCore.State) void {
+        parser.core.restoreState(state);
+    }
+
+    fn internString(parser: *Parser, string: []const u8) !String {
+        return try parser.pool.insert(string);
+    }
+
+    fn append(parser: *Parser, comptime T: type, list: *ast.List(T), item: T) !void {
+        const node = try parser.arena.create(ast.List(T).Node);
+        errdefer parser.arena.destroy(node);
+
+        node.data = item;
+
+        list.append(node);
+    }
+
+    pub const FatalAcceptError = error{
+        // We're out of memory accepting some rule. We cannot recover from this.
+        OutOfMemory,
+
+        // We found a character the tokenizer does not accept, we cannot recover from this ever.
+        UnexpectedCharacter,
+    };
+
+    pub const AcceptError = FatalAcceptError || error{
+
+        // The token stream is too short to accept this rule
+        EndOfStream,
+
+        // The token stream contains an unexpected token, this is a syntax error
+        UnexpectedToken,
+    };
+
+    fn filterAcceptError(err: AcceptError) FatalAcceptError!void {
+        return switch (err) {
+            error.EndOfStream,
+            error.UnexpectedToken,
+            => {},
+
+            error.OutOfMemory,
+            error.UnexpectedCharacter,
+            => |e| return e,
+        };
+    }
+};
+
 const match = ptk.matchers;
-
 const Pattern = ptk.Pattern(TokenType);
-
-const ParserCore = ptk.ParserCore(TokenType, .{ .whitespace, .line_comment });
-
 const Tokenizer = ptk.Tokenizer(TokenType, &.{
     Pattern.create(.line_comment, match.sequenceOf(.{ match.literal("#"), match.takeNoneOf("\r\n") })),
 
@@ -147,7 +439,7 @@ const Tokenizer = ptk.Tokenizer(TokenType, &.{
     Pattern.create(.code_literal, matchCodeLiteral),
 
     // identifiers must come after keywords:
-    Pattern.create(.raw_identifier, matchRawIdentifier),
+    Pattern.create(.identifier, matchRawIdentifier),
     Pattern.create(.node_ref, matchNodeRef),
     Pattern.create(.rule_ref, matchRuleRef),
     Pattern.create(.token_ref, matchTokenRef),
