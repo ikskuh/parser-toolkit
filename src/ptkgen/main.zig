@@ -8,6 +8,7 @@ const ptk = @import("parser-toolkit");
 
 const ast = @import("ast.zig");
 const parser = @import("parser.zig");
+const ast_dump = @import("ast_dump.zig");
 
 comptime {
     // reference for unit tests:
@@ -165,94 +166,10 @@ fn compileFile(
     );
     defer tree.deinit();
 
-    dumpAst(string_pool, tree.top_level_declarations);
-
     if (mode == .parse_only) {
         // we're done if we're here
         return;
     }
-}
 
-fn dumpAst(strings: *const ptk.strings.Pool, decls: ast.List(ast.TopLevelDeclaration)) void {
-    std.debug.print("ast dump:\n", .{});
-
-    var iter = ast.iterate(decls);
-    while (iter.next()) |decl| {
-        switch (decl) {
-            .start => |item| std.debug.print("start {s}\n", .{strings.get(item.identifier)}),
-
-            .rule => |rule| {
-                std.debug.print("rule {s}", .{strings.get(rule.name.value)});
-
-                if (rule.ast_type) |ast_type| {
-                    std.debug.print(" : ", .{});
-                    dumpAstType(strings, ast_type);
-                }
-
-                std.debug.print(" = \n", .{});
-
-                var prods = ast.iterate(rule.productions);
-                var first = true;
-                while (prods.next()) |prod| {
-                    defer first = false;
-                    if (!first) {
-                        std.debug.print("  | ", .{});
-                    } else {
-                        std.debug.print("    ", .{});
-                    }
-                    dumpMappedProd(strings, prod);
-                }
-
-                std.debug.print("\n;\n", .{});
-            },
-
-            .node => |node| {
-                std.debug.print("node {s}", .{strings.get(node.name.value)});
-
-                std.debug.print(";\n", .{});
-            },
-        }
-    }
-}
-
-fn dumpAstType(strings: *const ptk.strings.Pool, typespec: ast.TypeSpec) void {
-    _ = strings;
-    _ = typespec;
-    std.debug.print("<TYPE HERE>", .{});
-}
-
-fn dumpMappedProd(strings: *const ptk.strings.Pool, mapped_prod: ast.MappedProduction) void {
-    dumpProd(strings, mapped_prod.production);
-
-    if (mapped_prod.mapping) |mapping| {
-        dumpMapping(strings, mapping);
-    }
-}
-
-fn dumpProd(strings: *const ptk.strings.Pool, production: ast.Production) void {
-    switch (production) {
-        .literal => |lit| std.debug.print("\"{}\"", .{std.zig.fmtEscapes(strings.get(lit.value))}),
-        .terminal => |term| std.debug.print("<{}>", .{std.zig.fmtId(strings.get(term.identifier))}),
-        .recursion => std.debug.print("<recursion>", .{}),
-        .sequence => |seq| {
-            std.debug.print("(", .{});
-
-            var iter = ast.iterate(seq);
-            while (iter.next()) |item| {
-                std.debug.print(" ", .{});
-                dumpProd(strings, item);
-            }
-
-            std.debug.print(" )", .{});
-        },
-        .optional => std.debug.print("<optional>", .{}),
-        .repetition_zero => std.debug.print("<repetition_zero>", .{}),
-        .repetition_one => std.debug.print("<repetition_one>", .{}),
-    }
-}
-
-fn dumpMapping(strings: *const ptk.strings.Pool, mapping: ast.AstMapping) void {
-    _ = strings;
-    _ = mapping;
-    std.debug.print("<MAPPING HERE>", .{});
+    ast_dump.dump(string_pool, tree);
 }

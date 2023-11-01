@@ -36,14 +36,6 @@ pub fn parse(allocator: std.mem.Allocator, diagnostics: *ptk.Diagnostics, string
     };
 
     const document_node = parser.acceptDocument() catch |err| switch (err) {
-        error.UnexpectedCharacter => {
-            try diagnostics.emit(tokenizer.current_location, .@"error", "Unexpected character: '{}'", .{
-                fmtEscapes(tokenizer.source[tokenizer.offset..][0..1]),
-            });
-            return error.SyntaxError;
-        },
-
-        error.EndOfStream, error.UnexpectedToken => @panic("Error handling is fucked up, something escaped"),
 
         // Unrecoverable syntax error, must have created diagnostics already
         error.SyntaxError => |e| {
@@ -163,15 +155,18 @@ const Parser = struct {
     }
 
     fn acceptTopLevelDecl(parser: *Parser) !?ast.TopLevelDeclaration {
-        if (parser.acceptLiteral(.rule)) |_| {
-            return .{
-                .rule = try parser.acceptRule(),
-            };
+        if (parser.acceptRule()) |rule| {
+            return .{ .rule = rule };
         } else |err| try filterAcceptError(err);
 
         // Detect any excess tokens on the top level:
-        if (try parser.core.nextToken()) |token| {
-            try parser.emitDiagnostic(null, "Unexpected token '{}'", .{fmtEscapes(token.text)});
+        const excess_tokens = if (parser.core.nextToken()) |token|
+            (token != null)
+        else |err| switch (err) {
+            error.UnexpectedCharacter => true,
+        };
+        if (excess_tokens) {
+            try parser.emitDiagnostic(null, "Unexpected end of file", .{});
             return error.SyntaxError;
         }
 
@@ -182,14 +177,16 @@ const Parser = struct {
         var state = parser.save();
         errdefer parser.restore(state);
 
-        const identifier = try parser.acceptIdentifier();
+        try parser.acceptLiteral(.rule, .recover);
 
-        const rule_type = if (parser.acceptLiteral(.@":"))
+        const identifier = try parser.acceptIdentifier(.fail);
+
+        const rule_type = if (try parser.tryAcceptLiteral(.@":"))
             try parser.acceptTypeSpec()
-        else |_|
+        else
             null;
 
-        try parser.acceptLiteral(.@"=");
+        try parser.acceptLiteral(.@"=", .fail);
 
         var list: ast.List(ast.MappedProduction) = .{};
 
@@ -199,11 +196,11 @@ const Parser = struct {
             try parser.append(ast.MappedProduction, &list, production);
 
             // TODO: Improve error reporting here
-            if (parser.acceptLiteral(.@";")) {
+            if (try parser.tryAcceptLiteral(.@";")) {
                 break;
-            } else |_| {}
+            }
 
-            try parser.acceptLiteral(.@"|");
+            try parser.acceptLiteral(.@"|", .fail);
         }
 
         return ast.Rule{
@@ -216,9 +213,9 @@ const Parser = struct {
     fn acceptMappedProduction(parser: *Parser) !ast.MappedProduction {
         var sequence = try parser.acceptProductionSequence();
 
-        const mapping = if (parser.acceptLiteral(.@"=>"))
+        const mapping = if (try parser.tryAcceptLiteral(.@"=>"))
             try parser.acceptAstMapping()
-        else |_|
+        else
             null;
 
         return ast.MappedProduction{
@@ -237,8 +234,8 @@ const Parser = struct {
             if (parser.acceptProduction()) |prod| {
                 try parser.append(ast.Production, &list, prod);
             } else |err| switch (err) {
-                error.UnexpectedToken => break,
-                else => |e| return e,
+                error.UnexpectedTokenRecoverable => break,
+                error.OutOfMemory, error.SyntaxError => |e| return e,
             }
         }
 
@@ -246,7 +243,7 @@ const Parser = struct {
     }
 
     fn acceptProduction(parser: *Parser) !ast.Production {
-        const str = try parser.acceptStringLiteral();
+        const str = try parser.acceptStringLiteral(.recover);
 
         return ast.Production{
             .literal = str,
@@ -255,16 +252,16 @@ const Parser = struct {
 
     fn acceptAstMapping(parser: *Parser) !ast.AstMapping {
         _ = parser;
-        return error.UnexpectedToken;
+        @panic("not implemented yet");
     }
 
     fn acceptTypeSpec(parser: *Parser) !ast.TypeSpec {
         _ = parser;
-        return error.UnexpectedToken;
+        @panic("not implemented yet");
     }
 
-    fn acceptStringLiteral(parser: *Parser) !ast.StringLiteral {
-        const token = try parser.core.accept(RS.is(.string_literal));
+    fn acceptStringLiteral(parser: *Parser, accept_mode: AcceptMode) !ast.StringLiteral {
+        const token = try parser.acceptToken(.string_literal, accept_mode);
 
         std.debug.assert(token.text.len >= 2);
 
@@ -274,8 +271,8 @@ const Parser = struct {
         };
     }
 
-    fn acceptIdentifier(parser: *Parser) !ast.Identifier {
-        const token = try parser.core.accept(RS.is(.identifier));
+    fn acceptIdentifier(parser: *Parser, accept_mode: AcceptMode) !ast.Identifier {
+        const token = try parser.acceptToken(.identifier, accept_mode);
 
         return ast.Identifier{
             .location = token.location,
@@ -283,9 +280,68 @@ const Parser = struct {
         };
     }
 
-    fn acceptLiteral(parser: *Parser, comptime token_type: TokenType) !void {
-        _ = try parser.core.accept(RS.is(token_type));
+    fn acceptLiteral(parser: *Parser, comptime token_type: TokenType, accept_mode: AcceptMode) !void {
+        _ = try parser.acceptToken(token_type, accept_mode);
     }
+
+    fn tryAcceptLiteral(parser: *Parser, comptime token_type: TokenType) !bool {
+        _ = parser.acceptToken(token_type, .recover) catch |err| switch (err) {
+            error.UnexpectedTokenRecoverable => return false,
+            error.OutOfMemory, error.SyntaxError => |e| return e,
+        };
+        return true;
+    }
+
+    /// Tries to accept a given token and will emit a diagnostic if it fails.
+    fn acceptToken(parser: *Parser, comptime token_type: TokenType, accept_mode: AcceptMode) !Token {
+        const saved_state = parser.save();
+        errdefer parser.restore(saved_state);
+
+        const source_offset = parser.core.tokenizer.offset;
+        const location = parser.core.tokenizer.current_location;
+
+        if (parser.core.accept(RS.any)) |token| {
+            // std.log.debug("token trace: {}", .{token});
+
+            if (token.type != token_type) {
+                switch (accept_mode) {
+                    .fail => {
+                        try parser.emitDiagnostic(location, "Expected token {s}, but discovered token {s} ('{}')", .{
+                            @tagName(token_type),
+                            @tagName(token.type),
+                            std.zig.fmtEscapes(token.text),
+                        });
+                        return error.SyntaxError;
+                    },
+                    .recover => return error.UnexpectedTokenRecoverable,
+                }
+            }
+            return token;
+        } else |err| switch (err) {
+            error.UnexpectedToken => unreachable, // RS.any will always accept the token
+            error.EndOfStream => switch (accept_mode) {
+                .fail => {
+                    try parser.emitDiagnostic(location, "Expected token {s}, but end of file was discovered", .{@tagName(token_type)});
+                    return error.SyntaxError;
+                },
+                .recover => return error.UnexpectedTokenRecoverable,
+            },
+            error.UnexpectedCharacter => {
+                try parser.emitDiagnostic(location, "Unexpected character: '{}'", .{
+                    fmtEscapes(parser.core.tokenizer.source[source_offset..][0..1]),
+                });
+                return error.SyntaxError;
+            },
+        }
+    }
+
+    const AcceptMode = enum {
+        /// Will emit a syntax error with diagnostic
+        fail,
+
+        /// Is recoverable
+        recover,
+    };
 
     // management:
 
@@ -374,8 +430,8 @@ const Parser = struct {
         // We're out of memory accepting some rule. We cannot recover from this.
         OutOfMemory,
 
-        // We found a character the tokenizer does not accept, we cannot recover from this ever.
-        UnexpectedCharacter,
+        // Something could not be accepted.
+        SyntaxError,
     };
 
     pub const AcceptError = FatalAcceptError || error{
@@ -384,17 +440,17 @@ const Parser = struct {
         EndOfStream,
 
         // The token stream contains an unexpected token, this is a syntax error
-        UnexpectedToken,
+        UnexpectedTokenRecoverable,
     };
 
     fn filterAcceptError(err: AcceptError) FatalAcceptError!void {
         return switch (err) {
             error.EndOfStream,
-            error.UnexpectedToken,
+            error.UnexpectedTokenRecoverable,
             => {},
 
             error.OutOfMemory,
-            error.UnexpectedCharacter,
+            error.SyntaxError,
             => |e| return e,
         };
     }
