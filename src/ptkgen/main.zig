@@ -7,6 +7,7 @@ const args_parser = @import("args");
 const ptk = @import("parser-toolkit");
 
 const ast = @import("ast.zig");
+const intl = @import("intl.zig");
 const parser = @import("parser.zig");
 const ast_dump = @import("ast_dump.zig");
 
@@ -21,6 +22,8 @@ pub const CliOptions = struct {
     help: bool = false,
     output: ?[]const u8 = null,
     test_mode: TestMode = .none,
+
+    @"max-file-size": u32 = 4 * 1024, // 4 MB of source code is a lot!
 
     pub const shorthands = .{
         .h = "help",
@@ -37,6 +40,8 @@ pub const CliOptions = struct {
             .output = "If given, will print the generated code into <file>",
 
             .test_mode = "(internal use only, required for testing)",
+
+            .@"max-file-size" = "Maximum input file size in KiB (default: 4096)",
         },
     };
 };
@@ -46,7 +51,8 @@ const TestMode = enum {
     parse_only,
 };
 
-pub fn main() !u8 {
+const AppError = error{OutOfMemory} || std.fs.File.WriteError;
+pub fn main() AppError!u8 {
     // errdefer |e| @compileLog(@TypeOf(e));
 
     var stdout = std.io.getStdOut();
@@ -97,14 +103,74 @@ pub fn main() !u8 {
     else
         "stdint";
 
-    compileFile(
-        dynamic_allocator,
-        &diagnostics,
-        &string_pool,
-        input_file,
-        file_name,
-        cli.options.test_mode,
-    ) catch |err| switch (err) {
+    var expectations = std.ArrayList(TestExpectation).init(dynamic_allocator);
+    defer expectations.deinit();
+
+    const processing_ok = process_file: {
+        // 4 MB should be enough for now...
+        var source_code = input_file.readToEndAlloc(static_allocator, 1024 * cli.options.@"max-file-size") catch |err| {
+            try convertErrorToDiagnostics(&diagnostics, file_name, err);
+            break :process_file false;
+        };
+
+        defer static_allocator.free(source_code);
+
+        if (cli.options.test_mode != .none) {
+            // in test mode, parse expectations from source code:
+            var lines = std.mem.tokenize(u8, source_code, "\n");
+            while (lines.next()) |line| {
+                const prefix = "# expected:";
+                if (std.mem.startsWith(u8, line, prefix)) {
+                    var items = std.mem.tokenize(u8, line[prefix.len..], " \t,");
+                    while (items.next()) |error_code| {
+                        if (error_code.len == 0 or (error_code[0] != 'E' and error_code[0] != 'W' and error_code[0] != 'D'))
+                            @panic("invalid error code!");
+                        const id = std.fmt.parseInt(u16, error_code[1..], 10) catch @panic("bad integer");
+                        const code = std.meta.intToEnum(Diagnostics.Code, id) catch @panic("bad diagnostic code");
+                        try expectations.append(.{ .code = code });
+                    }
+                }
+            }
+        }
+
+        compileFile(
+            dynamic_allocator,
+            &diagnostics,
+            &string_pool,
+            source_code,
+            file_name,
+            cli.options.test_mode,
+        ) catch |err| {
+            try convertErrorToDiagnostics(&diagnostics, file_name, err);
+            break :process_file false;
+        };
+
+        // Todo: continue from here?
+
+        break :process_file true;
+    };
+
+    if (cli.options.test_mode == .none) {
+        try diagnostics.render(stderr.writer());
+
+        return if (processing_ok and !diagnostics.hasErrors())
+            0 // exit code for success
+        else
+            1; // exit code for failure
+    } else {
+        // test fails through `error.TestExpectationMismatched`, not through diagnostics:
+        validateDiagnostics(dynamic_allocator, diagnostics, expectations.items) catch {
+            try stderr.writeAll("Full diagnostics:\n");
+            try diagnostics.render(stderr.writer());
+
+            return 1;
+        };
+        return 0;
+    }
+}
+
+fn convertErrorToDiagnostics(diagnostics: *Diagnostics, file_name: []const u8, err: intl.FormattableError) error{OutOfMemory}!void {
+    switch (err) {
         // syntax errors must produce diagnostics:
         error.SyntaxError, error.InvalidSourceEncoding => std.debug.assert(diagnostics.hasErrors()),
 
@@ -143,20 +209,6 @@ pub fn main() !u8 {
                 .column = 1,
             }, .io_error, .{ .error_code = e });
         },
-
-        error.TestExpectationMismatched => return 1, // this is a shortcut we can take to not render the diagnostics on test failure
-    };
-
-    if (cli.options.test_mode == .none) {
-        try diagnostics.render(stderr.writer());
-
-        return if (diagnostics.hasErrors())
-            1
-        else
-            0;
-    } else {
-        // test fails through `error.TestExpectationMismatched`, not through diagnostics
-        return 0;
     }
 }
 
@@ -187,6 +239,7 @@ fn validateDiagnostics(allocator: std.mem.Allocator, diagnostics: Diagnostics, e
             if (std.mem.indexOfScalar(Diagnostics.Code, available.items, e)) |index| {
                 _ = available.swapRemove(index);
                 _ = expected.swapRemove(i);
+                // std.log.info("found matching diagnostic {s}", .{@tagName(e)});
             } else {
                 i += 1;
             }
@@ -210,34 +263,10 @@ fn compileFile(
     allocator: std.mem.Allocator,
     diagnostics: *Diagnostics,
     string_pool: *ptk.strings.Pool,
-    input_file: std.fs.File,
+    source_code: []const u8,
     file_name: []const u8,
     mode: TestMode,
 ) !void {
-    var source_code = try input_file.readToEndAlloc(allocator, 4 << 20); // 4 MB should be enough for now...
-    defer allocator.free(source_code);
-
-    var expectations = std.ArrayList(TestExpectation).init(allocator);
-    defer expectations.deinit();
-
-    if (mode != .none) {
-        // parse expectations from source code:
-        var lines = std.mem.tokenize(u8, source_code, "\n");
-        while (lines.next()) |line| {
-            const prefix = "# expected:";
-            if (std.mem.startsWith(u8, line, prefix)) {
-                var items = std.mem.tokenize(u8, line[prefix.len..], " \t,");
-                while (items.next()) |error_code| {
-                    if (error_code.len == 0 or (error_code[0] != 'E' and error_code[0] != 'W' and error_code[0] != 'D'))
-                        @panic("invalid error code!");
-                    const id = std.fmt.parseInt(u16, error_code[1..], 10) catch @panic("bad integer");
-                    const code = std.meta.intToEnum(Diagnostics.Code, id) catch @panic("bad diagnostic code");
-                    try expectations.append(.{ .code = code });
-                }
-            }
-        }
-    }
-
     var tree = try parser.parse(
         allocator,
         diagnostics,
@@ -247,19 +276,11 @@ fn compileFile(
     );
     defer tree.deinit();
 
-    if (mode == .parse_only) {
-        try validateDiagnostics(allocator, diagnostics.*, expectations.items);
-        return;
-    }
-
     // TODO: Implement sema
 
     // TODO: Implement parsergen / tablegen / highlightergen
 
     if (mode == .none) {
         ast_dump.dump(string_pool, tree);
-    } else {
-        // we need to validate against test expectations when doing *any* test mode
-        try validateDiagnostics(allocator, diagnostics.*, expectations.items);
     }
 }

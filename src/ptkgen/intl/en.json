@@ -6,6 +6,7 @@
         "invalid_source_encoding": "Invalid source code encoding detected",
         "unexpected_token_eof": "Expected token {[expected_type]}, but end of file was discovered",
         "unexpected_token": "Expected token {[expected_type]}, but discovered token {[actual_type]} ('{[actual_text]}')",
+        "unexpected_toplevel_token": "Expected token 'start', 'rule', 'node' or 'token', but discovered token {[actual_type]} ('{[actual_text]}')",
         "unexpected_character": "Unexpected character: '{[character]}'",
         "unexpected_eof": "Unexpected end of file",
         "bad_string_escape": "Invalid string escape: Escape sequence at the end of string",

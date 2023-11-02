@@ -1,7 +1,7 @@
 
+start <document>;
 
-
-rule document = [ <top_level> ]* ;
+rule document = ( <top_level> )* ;
 
 rule top_level =
       <start_decl>
@@ -27,12 +27,13 @@ rule production_sequence = ( <production> )+;
 rule production =
     $string_literal
   | $rule_ref
+  | $token_ref
   | "(" <production_sequence> ")" "?"
   | "(" <production_sequence> ")" "*"
   | "(" <production_sequence> ")" "+"
   | "(" <production_sequence> ")"
 ;
 
-rule mapping = 
-    # TODO
-;
+# rule mapping = 
+#     # TODO
+# ;

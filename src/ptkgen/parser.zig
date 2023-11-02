@@ -143,22 +143,43 @@ const Parser = struct {
     }
 
     fn acceptTopLevelDecl(parser: *Parser) FatalAcceptError!?ast.TopLevelDeclaration {
+        if (parser.acceptStartDecl()) |root_rule| {
+            return .{ .start = root_rule };
+        } else |err| try filterAcceptError(err);
+
         if (parser.acceptRule()) |rule| {
             return .{ .rule = rule };
         } else |err| try filterAcceptError(err);
 
         // Detect any excess tokens on the top level:
-        const excess_tokens = if (parser.core.nextToken()) |token|
-            (token != null)
-        else |err| switch (err) {
-            error.UnexpectedCharacter => true,
-        };
-        if (excess_tokens) {
-            try parser.emitDiagnostic(null, .unexpected_eof, .{});
-            return error.SyntaxError;
+        if (parser.core.nextToken()) |maybe_token| {
+            if (maybe_token) |token| {
+                try parser.emitDiagnostic(token.location, .unexpected_toplevel_token, .{
+                    .actual_type = token.type,
+                    .actual_text = token.text,
+                });
+                return error.SyntaxError;
+            } else {
+                // This is actually the good path here, as only if we don't find any token or tokenization error,
+                // we reached the end of the file.
+            }
+        } else |err| switch (err) {
+            error.UnexpectedCharacter => {
+                try parser.emitUnexpectedCharacter(parser.core.tokenizer.current_location, parser.core.tokenizer.offset);
+                return error.SyntaxError;
+            },
         }
 
         return null;
+    }
+
+    fn acceptStartDecl(parser: *Parser) AcceptError!ast.RuleRef {
+        try parser.acceptLiteral(.start, .recover);
+        const init_rule = try parser.acceptRuleReference(.fail);
+
+        try parser.acceptLiteral(.@";", .fail);
+
+        return init_rule;
     }
 
     fn acceptRule(parser: *Parser) AcceptError!ast.Rule {
@@ -229,7 +250,7 @@ const Parser = struct {
         }
 
         if (list.len() == 0) {
-            // Empty list is a non-recoverable syntax error:
+            // Empty list is a recoverable syntax error:
             try parser.emitDiagnostic(null, .illegal_empty_group, .{});
         }
 
@@ -252,11 +273,20 @@ const Parser = struct {
             }
         }
 
-        const str = try parser.acceptStringLiteral(.recover);
+        if (parser.acceptStringLiteral(.recover)) |str| {
+            return ast.Production{ .literal = str };
+        } else |err| try filterAcceptError(err);
 
-        return ast.Production{
-            .literal = str,
-        };
+        if (parser.acceptTokenReference(.recover)) |ref| {
+            return ast.Production{ .terminal = ref };
+        } else |err| try filterAcceptError(err);
+
+        if (parser.acceptRuleReference(.recover)) |ref| {
+            return ast.Production{ .recursion = ref };
+        } else |err| try filterAcceptError(err);
+
+        // We're done with out list
+        return error.UnexpectedTokenRecoverable;
     }
 
     fn acceptAstMapping(parser: *Parser) AcceptError!ast.AstMapping {
@@ -282,10 +312,37 @@ const Parser = struct {
 
     fn acceptIdentifier(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.Identifier {
         const token = try parser.acceptToken(.identifier, accept_mode);
-
         return ast.Identifier{
             .location = token.location,
             .value = try parser.unwrapIdentifierString(token.location, token.text),
+        };
+    }
+
+    fn acceptRuleReference(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.RuleRef {
+        const token = try parser.acceptToken(.rule_ref, accept_mode);
+        std.debug.assert(std.mem.startsWith(u8, token.text, "<"));
+        std.debug.assert(std.mem.endsWith(u8, token.text, ">"));
+        return ast.RuleRef{
+            .location = token.location,
+            .identifier = try parser.unwrapIdentifierString(token.location, token.text[1 .. token.text.len - 1]),
+        };
+    }
+
+    fn acceptTokenReference(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.TokenRef {
+        const token = try parser.acceptToken(.token_ref, accept_mode);
+        std.debug.assert(std.mem.startsWith(u8, token.text, "$"));
+        return ast.TokenRef{
+            .location = token.location,
+            .identifier = try parser.unwrapIdentifierString(token.location, token.text[1..]),
+        };
+    }
+
+    fn acceptNodeReference(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.NodeRef {
+        const token = try parser.acceptToken(.node_ref, accept_mode);
+        std.debug.assert(std.mem.startsWith(u8, token.text, "!"));
+        return ast.NodeRef{
+            .location = token.location,
+            .identifier = try parser.unwrapIdentifierString(token.location, token.text[1..]),
         };
     }
 
@@ -293,7 +350,7 @@ const Parser = struct {
         _ = try parser.acceptToken(token_type, accept_mode);
     }
 
-    fn tryAcceptLiteral(parser: *Parser, comptime token_type: TokenType) !bool {
+    fn tryAcceptLiteral(parser: *Parser, comptime token_type: TokenType) FatalAcceptError!bool {
         _ = parser.acceptToken(token_type, .recover) catch |err| switch (err) {
             error.UnexpectedTokenRecoverable => return false,
             error.OutOfMemory, error.InvalidSourceEncoding, error.SyntaxError => |e| return e,

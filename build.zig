@@ -97,21 +97,9 @@ pub fn build(b: *std.build.Builder) void {
     }
 }
 
-const parser_ok_files = [_][]const u8{
-    "test/parser/accept/empty.ptk",
-    "test/parser/accept/empty-with-comment-linefeed.ptk",
-    "test/parser/accept/empty-with-comment.ptk",
-    "test/parser/accept/identifiers.ptk",
-
-    "test/parser/accept/optional-nospace.ptk",
-    "test/parser/accept/optional-space.ptk",
-    "test/parser/accept/rep_one-nospace.ptk",
-    "test/parser/accept/rep_one-space.ptk",
-    "test/parser/accept/rep_zero-nospace.ptk",
-    "test/parser/accept/rep_zero-space.ptk",
-
-    // "examples/ptkgen/ast-with-unions.ptk", // TODO: Move to examples
-} ++ analyis_ok_files;
+const example_files = [_][]const u8{
+    "/home/felix/projects/parser-toolkit/examples/ptkgen/grammar.ptk",
+};
 
 const analyis_ok_files = [_][]const u8{
     "test/analysis/accept/match-literal-rule.ptk",
@@ -138,7 +126,29 @@ const analyis_ok_files = [_][]const u8{
     "test/analysis/accept/match-rep_one-many-item.ptk",
     "test/analysis/accept/match-rep_one-many-sequence.ptk",
     "test/analysis/accept/match-rep_one-nested.ptk",
-};
+} ++ example_files;
+
+const parser_ok_files = [_][]const u8{
+    "test/parser/accept/empty.ptk",
+    "test/parser/accept/empty-with-comment-linefeed.ptk",
+    "test/parser/accept/empty-with-comment.ptk",
+    "test/parser/accept/identifiers.ptk",
+
+    "test/parser/accept/optional-nospace.ptk",
+    "test/parser/accept/optional-space.ptk",
+    "test/parser/accept/rep_one-nospace.ptk",
+    "test/parser/accept/rep_one-space.ptk",
+    "test/parser/accept/rep_zero-nospace.ptk",
+    "test/parser/accept/rep_zero-space.ptk",
+
+    "test/parser/accept/basic-rule-ref.ptk",
+    "test/parser/accept/basic-token-ref.ptk",
+    "test/parser/accept/rule-primitive-sequence.ptk",
+
+    "test/parser/accept/document-start.ptk",
+
+    // "examples/ptkgen/ast-with-unions.ptk", // TODO: Move to examples
+} ++ analyis_ok_files;
 
 const parser_reject_files = [_][]const u8{
     "test/parser/reject/empty-rule.rule",
@@ -146,4 +156,6 @@ const parser_reject_files = [_][]const u8{
     "test/parser/reject/empty-optional.rule",
     "test/parser/reject/empty-rep_one.rule",
     "test/parser/reject/empty-rep_zero.rule",
+
+    "test/parser/reject/unexpected-token-string.rule",
 };

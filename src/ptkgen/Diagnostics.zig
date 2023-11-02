@@ -27,6 +27,7 @@ pub const Code = enum(u16) {
     bad_string_escape = 1105,
     invalid_string_escape = 1106,
     excess_tokens = 1107,
+    unexpected_toplevel_token = 1108,
 
     // recoverable syntax errors:
     illegal_empty_group = 1200,
@@ -65,6 +66,10 @@ pub fn Data(comptime code: Code) type {
         },
         .unexpected_token => struct {
             expected_type: parser.TokenType,
+            actual_type: parser.TokenType,
+            actual_text: []const u8,
+        },
+        .unexpected_toplevel_token => struct {
             actual_type: parser.TokenType,
             actual_text: []const u8,
         },

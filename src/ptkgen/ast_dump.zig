@@ -23,7 +23,7 @@ const AstPrinter = struct {
         var iter = ast.iterate(decls);
         while (iter.next()) |decl| {
             switch (decl) {
-                .start => |item| print("start {}\n", .{printer.fmtId(item.identifier)}),
+                .start => |item| print("start <{}>;\n", .{printer.fmtId(item.identifier)}),
 
                 .rule => |rule| {
                     print("rule {s}", .{printer.fmtId(rule.name.value)});
@@ -54,6 +54,11 @@ const AstPrinter = struct {
                     print("node {s}", .{printer.fmtId(node.name.value)});
                     print(";\n", .{});
                 },
+
+                .token => |token| {
+                    print("token {s}", .{printer.fmtId(token.name.value)});
+                    print(";\n", .{});
+                },
             }
         }
     }
@@ -75,8 +80,9 @@ const AstPrinter = struct {
     fn dumpProd(printer: AstPrinter, production: ast.Production) void {
         switch (production) {
             .literal => |lit| print("\"{}\"", .{printer.fmtString(lit.value)}),
-            .terminal => |term| print("<{}>", .{printer.fmtId(term.identifier)}),
-            .recursion => print("<recursion>", .{}),
+            .terminal => |term| print("${}", .{printer.fmtId(term.identifier)}),
+            .recursion => |term| print("<{}>", .{printer.fmtId(term.identifier)}),
+
             .sequence, .optional, .repetition_zero, .repetition_one => |seq| {
                 print("(", .{});
 

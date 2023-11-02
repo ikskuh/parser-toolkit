@@ -70,9 +70,10 @@ pub const BuiltinLiteral = String(.builtin);
 pub const Document = List(TopLevelDeclaration);
 
 pub const TopLevelDeclaration = union(enum) {
-    start: NodeRef,
+    start: RuleRef,
     rule: Rule,
     node: Node,
+    token: Token,
 };
 
 pub const NodeRef = Reference(Node); // !mynode

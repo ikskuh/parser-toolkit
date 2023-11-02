@@ -39,6 +39,7 @@ pub const Localization = struct {
         invalid_string_escape: []const u8,
         excess_tokens: []const u8,
         illegal_empty_group: []const u8,
+        unexpected_toplevel_token: []const u8,
     },
 
     errors: struct {
