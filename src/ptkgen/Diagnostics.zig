@@ -12,21 +12,24 @@ pub const Code = enum(u16) {
     pub const first_note = 8000;
     pub const last_item = 10000;
 
+    // generic failures:
     out_of_memory = 1000,
     file_limit_exceeded = 1001,
     io_error = 1002,
 
-    invalid_source_encoding = 1003,
-    unexpected_token_eof = 1004,
-    unexpected_token = 1005,
-    unexpected_character = 1006,
-    unexpected_eof = 1007,
+    // non-recoverable syntax errors:
 
-    bad_string_escape = 1008,
+    invalid_source_encoding = 1100,
+    unexpected_token_eof = 1101,
+    unexpected_token = 1102,
+    unexpected_character = 1103,
+    unexpected_eof = 1104,
+    bad_string_escape = 1105,
+    invalid_string_escape = 1106,
+    excess_tokens = 1107,
 
-    invalid_string_escape = 1009,
-
-    excess_tokens = 1010,
+    // recoverable syntax errors:
+    illegal_empty_group = 1200,
 
     comptime {
         std.debug.assert(first_error < first_warning);
@@ -74,6 +77,8 @@ pub fn Data(comptime code: Code) type {
         .invalid_string_escape => struct { escape: u21 },
         .excess_tokens => struct { token_type: parser.TokenType },
 
+        .illegal_empty_group => NoDiagnosticData,
+
         // else => @compileError(std.fmt.comptimePrint("Code {} has no diagnostic type associated!", .{code})),
     };
 }
@@ -85,14 +90,17 @@ pub const Message = struct {
 };
 
 inner: ptk.Diagnostics,
+codes: std.ArrayList(Code),
 
 pub fn init(allocator: std.mem.Allocator) Diagnostics {
     return Diagnostics{
         .inner = ptk.Diagnostics.init(allocator),
+        .codes = std.ArrayList(Code).init(allocator),
     };
 }
 
 pub fn deinit(diag: *Diagnostics) void {
+    diag.codes.deinit();
     diag.inner.deinit();
     diag.* = undefined;
 }
@@ -242,6 +250,7 @@ pub fn emit(diag: *Diagnostics, location: ptk.Location, comptime code: Code, par
     };
 
     try diag.inner.emit(location, level, "{s}{d:0>4}: {s}", .{ code_prefix, @intFromEnum(code), message_text });
+    try diag.codes.append(code);
 }
 
 pub fn render(diag: Diagnostics, stream: anytype) !void {

@@ -74,6 +74,13 @@ pub fn build(b: *std.build.Builder) void {
             run.addFileArg(.{ .path = file });
             test_step.dependOn(&run.step);
         }
+
+        for (parser_reject_files) |file| {
+            const run = b.addRunArtifact(ptkdef_exe);
+            run.addArg("--test_mode=parse_only");
+            run.addFileArg(.{ .path = file });
+            test_step.dependOn(&run.step);
+        }
     }
 
     // examples
@@ -95,6 +102,14 @@ const parser_ok_files = [_][]const u8{
     "test/parser/accept/empty-with-comment-linefeed.ptk",
     "test/parser/accept/empty-with-comment.ptk",
     "test/parser/accept/identifiers.ptk",
+
+    "test/parser/accept/optional-nospace.ptk",
+    "test/parser/accept/optional-space.ptk",
+    "test/parser/accept/rep_one-nospace.ptk",
+    "test/parser/accept/rep_one-space.ptk",
+    "test/parser/accept/rep_zero-nospace.ptk",
+    "test/parser/accept/rep_zero-space.ptk",
+
     // "examples/ptkgen/ast-with-unions.ptk", // TODO: Move to examples
 } ++ analyis_ok_files;
 
@@ -108,4 +123,27 @@ const analyis_ok_files = [_][]const u8{
     "test/analysis/accept/match-group-many-item.ptk",
     "test/analysis/accept/match-group-many-sequence.ptk",
     "test/analysis/accept/match-group-nested.ptk",
+    "test/analysis/accept/match-optional-one-item.ptk",
+    "test/analysis/accept/match-optional-one-sequence.ptk",
+    "test/analysis/accept/match-optional-many-item.ptk",
+    "test/analysis/accept/match-optional-many-sequence.ptk",
+    "test/analysis/accept/match-optional-nested.ptk",
+    "test/analysis/accept/match-rep_zero-one-item.ptk",
+    "test/analysis/accept/match-rep_zero-one-sequence.ptk",
+    "test/analysis/accept/match-rep_zero-many-item.ptk",
+    "test/analysis/accept/match-rep_zero-many-sequence.ptk",
+    "test/analysis/accept/match-rep_zero-nested.ptk",
+    "test/analysis/accept/match-rep_one-one-item.ptk",
+    "test/analysis/accept/match-rep_one-one-sequence.ptk",
+    "test/analysis/accept/match-rep_one-many-item.ptk",
+    "test/analysis/accept/match-rep_one-many-sequence.ptk",
+    "test/analysis/accept/match-rep_one-nested.ptk",
+};
+
+const parser_reject_files = [_][]const u8{
+    "test/parser/reject/empty-rule.rule",
+    "test/parser/reject/empty-group.rule",
+    "test/parser/reject/empty-optional.rule",
+    "test/parser/reject/empty-rep_one.rule",
+    "test/parser/reject/empty-rep_zero.rule",
 };

@@ -10,7 +10,8 @@
         "unexpected_eof": "Unexpected end of file",
         "bad_string_escape": "Invalid string escape: Escape sequence at the end of string",
         "invalid_string_escape": "Invalid string escape \\{[escape]}",
-        "excess_tokens": "Excess token at the end of the file: {[token_type]}"
+        "excess_tokens": "Excess token at the end of the file: {[token_type]}",
+        "illegal_empty_group": "Production sequence may not be empty"
     },
     "errors": {
         "Unexpected": "unexpected error encountered",
@@ -26,7 +27,7 @@
         "ConnectionTimedOut": "connection timed out",
         "NotOpenForReading": "not open for reading",
         "NetNameDeleted": "net name deleted",
-        "StreamTooLong": "stream too long",
+        "FileTooBig": "Input file exceeds resources",
         "SyntaxError": "syntax error",
         "InvalidSourceEncoding": "invalid source encoding"
     }

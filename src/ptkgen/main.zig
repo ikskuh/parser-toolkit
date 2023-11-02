@@ -116,7 +116,7 @@ pub fn main() !u8 {
             }, .out_of_memory, .{});
         },
 
-        error.StreamTooLong => {
+        error.FileTooBig => {
             try diagnostics.emit(.{
                 .source = file_name,
                 .line = 1,
@@ -136,21 +136,74 @@ pub fn main() !u8 {
         error.ConnectionTimedOut,
         error.NotOpenForReading,
         error.NetNameDeleted,
-        => {
+        => |e| {
             try diagnostics.emit(.{
                 .source = file_name,
                 .line = 1,
                 .column = 1,
-            }, .io_error, .{ .error_code = err });
+            }, .io_error, .{ .error_code = e });
         },
+
+        error.TestExpectationMismatched => return 1, // this is a shortcut we can take to not render the diagnostics on test failure
     };
 
-    try diagnostics.render(stderr.writer());
+    if (cli.options.test_mode == .none) {
+        try diagnostics.render(stderr.writer());
 
-    return if (diagnostics.hasErrors())
-        1
-    else
-        0;
+        return if (diagnostics.hasErrors())
+            1
+        else
+            0;
+    } else {
+        // test fails through `error.TestExpectationMismatched`, not through diagnostics
+        return 0;
+    }
+}
+
+const TestExpectation = struct {
+    code: Diagnostics.Code,
+};
+
+fn validateDiagnostics(allocator: std.mem.Allocator, diagnostics: Diagnostics, expectations: []const TestExpectation) !void {
+    var available = std.ArrayList(Diagnostics.Code).init(allocator);
+    defer available.deinit();
+
+    var expected = std.ArrayList(Diagnostics.Code).init(allocator);
+    defer expected.deinit();
+
+    try available.appendSlice(diagnostics.codes.items);
+    try expected.resize(expectations.len);
+
+    for (expected.items, expectations) |*dst, src| {
+        dst.* = src.code;
+    }
+
+    // Remove everything from expected and available that is present in both:
+    {
+        var i: usize = 0;
+        while (i < expected.items.len) {
+            const e = expected.items[i];
+
+            if (std.mem.indexOfScalar(Diagnostics.Code, available.items, e)) |index| {
+                _ = available.swapRemove(index);
+                _ = expected.swapRemove(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    const ok = (available.items.len == 0) and (expected.items.len == 0);
+
+    for (available.items) |code| {
+        std.log.err("unexpected diagnostic: {0}", .{code});
+    }
+    for (expected.items) |code| {
+        std.log.err("unmatched diagnostic:  {0}", .{code});
+    }
+
+    if (!ok)
+        return error.TestExpectationMismatched;
 }
 
 fn compileFile(
@@ -161,19 +214,52 @@ fn compileFile(
     file_name: []const u8,
     mode: TestMode,
 ) !void {
+    var source_code = try input_file.readToEndAlloc(allocator, 4 << 20); // 4 MB should be enough for now...
+    defer allocator.free(source_code);
+
+    var expectations = std.ArrayList(TestExpectation).init(allocator);
+    defer expectations.deinit();
+
+    if (mode != .none) {
+        // parse expectations from source code:
+        var lines = std.mem.tokenize(u8, source_code, "\n");
+        while (lines.next()) |line| {
+            const prefix = "# expected:";
+            if (std.mem.startsWith(u8, line, prefix)) {
+                var items = std.mem.tokenize(u8, line[prefix.len..], " \t,");
+                while (items.next()) |error_code| {
+                    if (error_code.len == 0 or (error_code[0] != 'E' and error_code[0] != 'W' and error_code[0] != 'D'))
+                        @panic("invalid error code!");
+                    const id = std.fmt.parseInt(u16, error_code[1..], 10) catch @panic("bad integer");
+                    const code = std.meta.intToEnum(Diagnostics.Code, id) catch @panic("bad diagnostic code");
+                    try expectations.append(.{ .code = code });
+                }
+            }
+        }
+    }
+
     var tree = try parser.parse(
         allocator,
         diagnostics,
         string_pool,
         file_name,
-        input_file.reader(),
+        source_code,
     );
     defer tree.deinit();
 
     if (mode == .parse_only) {
-        // we're done if we're here
+        try validateDiagnostics(allocator, diagnostics.*, expectations.items);
         return;
     }
 
-    ast_dump.dump(string_pool, tree);
+    // TODO: Implement sema
+
+    // TODO: Implement parsergen / tablegen / highlightergen
+
+    if (mode == .none) {
+        ast_dump.dump(string_pool, tree);
+    } else {
+        // we need to validate against test expectations when doing *any* test mode
+        try validateDiagnostics(allocator, diagnostics.*, expectations.items);
+    }
 }

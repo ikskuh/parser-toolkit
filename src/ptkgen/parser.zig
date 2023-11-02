@@ -8,10 +8,7 @@ const fmtEscapes = std.zig.fmtEscapes;
 
 pub const Document = struct {
     arena: std.heap.ArenaAllocator,
-
     file_name: []const u8,
-    source_text: []const u8,
-
     top_level_declarations: ast.Document,
 
     pub fn deinit(ts: *Document) void {
@@ -20,15 +17,13 @@ pub const Document = struct {
     }
 };
 
-pub fn parse(allocator: std.mem.Allocator, diagnostics: *Diagnostics, string_pool: *ptk.strings.Pool, file_name: []const u8, stream: anytype) !Document {
+pub fn parse(allocator: std.mem.Allocator, diagnostics: *Diagnostics, string_pool: *ptk.strings.Pool, file_name: []const u8, source_code: []const u8) !Document {
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
 
     const file_name_copy = try arena.allocator().dupe(u8, file_name);
 
-    const text = try stream.readAllAlloc(arena.allocator(), 4 << 20); // 4 MB should be enough for now...
-
-    var tokenizer = Tokenizer.init(text, file_name_copy);
+    var tokenizer = Tokenizer.init(source_code, file_name_copy);
 
     var parser = Parser{
         .core = ParserCore.init(&tokenizer),
@@ -61,8 +56,6 @@ pub fn parse(allocator: std.mem.Allocator, diagnostics: *Diagnostics, string_poo
     return Document{
         .arena = arena,
         .file_name = file_name_copy,
-        .source_text = text,
-
         .top_level_declarations = document_node,
     };
 }
@@ -233,6 +226,11 @@ const Parser = struct {
                 error.UnexpectedTokenRecoverable => break,
                 error.OutOfMemory, error.InvalidSourceEncoding, error.SyntaxError => |e| return e,
             }
+        }
+
+        if (list.len() == 0) {
+            // Empty list is a non-recoverable syntax error:
+            try parser.emitDiagnostic(null, .illegal_empty_group, .{});
         }
 
         return list;

@@ -77,7 +77,7 @@ const AstPrinter = struct {
             .literal => |lit| print("\"{}\"", .{printer.fmtString(lit.value)}),
             .terminal => |term| print("<{}>", .{printer.fmtId(term.identifier)}),
             .recursion => print("<recursion>", .{}),
-            .sequence => |seq| {
+            .sequence, .optional, .repetition_zero, .repetition_one => |seq| {
                 print("(", .{});
 
                 var iter = ast.iterate(seq);
@@ -87,10 +87,14 @@ const AstPrinter = struct {
                 }
 
                 print(" )", .{});
+                switch (production) {
+                    .sequence => {},
+                    .optional => print("?", .{}),
+                    .repetition_zero => print("*", .{}),
+                    .repetition_one => print("+", .{}),
+                    else => unreachable,
+                }
             },
-            .optional => print("<optional>", .{}),
-            .repetition_zero => print("<repetition_zero>", .{}),
-            .repetition_one => print("<repetition_one>", .{}),
         }
     }
 

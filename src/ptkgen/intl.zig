@@ -38,6 +38,7 @@ pub const Localization = struct {
         bad_string_escape: []const u8,
         invalid_string_escape: []const u8,
         excess_tokens: []const u8,
+        illegal_empty_group: []const u8,
     },
 
     errors: struct {
@@ -57,7 +58,7 @@ pub const Localization = struct {
         NotOpenForReading: []const u8,
         NetNameDeleted: []const u8,
 
-        StreamTooLong: []const u8,
+        FileTooBig: []const u8,
         SyntaxError: []const u8,
         InvalidSourceEncoding: []const u8,
     },
