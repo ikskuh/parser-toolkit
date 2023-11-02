@@ -10,6 +10,8 @@ const ast = @import("ast.zig");
 const parser = @import("parser.zig");
 const ast_dump = @import("ast_dump.zig");
 
+const Diagnostics = @import("Diagnostics.zig");
+
 comptime {
     // reference for unit tests:
     _ = parser;
@@ -45,6 +47,8 @@ const TestMode = enum {
 };
 
 pub fn main() !u8 {
+    // errdefer |e| @compileLog(@TypeOf(e));
+
     var stdout = std.io.getStdOut();
     var stdin = std.io.getStdIn();
     var stderr = std.io.getStdErr();
@@ -69,7 +73,7 @@ pub fn main() !u8 {
     var string_pool = try ptk.strings.Pool.init(dynamic_allocator);
     defer string_pool.deinit();
 
-    var diagnostics = ptk.Diagnostics.init(dynamic_allocator);
+    var diagnostics = Diagnostics.init(dynamic_allocator);
     defer diagnostics.deinit();
 
     var input_file = switch (cli.positionals.len) {
@@ -102,14 +106,14 @@ pub fn main() !u8 {
         cli.options.test_mode,
     ) catch |err| switch (err) {
         // syntax errors must produce diagnostics:
-        error.SyntaxError => std.debug.assert(diagnostics.hasErrors()),
+        error.SyntaxError, error.InvalidSourceEncoding => std.debug.assert(diagnostics.hasErrors()),
 
         error.OutOfMemory => {
             try diagnostics.emit(.{
                 .source = file_name,
                 .line = 1,
                 .column = 1,
-            }, .@"error", "out of memory", .{});
+            }, .out_of_memory, .{});
         },
 
         error.StreamTooLong => {
@@ -117,7 +121,7 @@ pub fn main() !u8 {
                 .source = file_name,
                 .line = 1,
                 .column = 1,
-            }, .@"error", "input file too large", .{});
+            }, .file_limit_exceeded, .{});
         },
 
         error.InputOutput,
@@ -137,11 +141,11 @@ pub fn main() !u8 {
                 .source = file_name,
                 .line = 1,
                 .column = 1,
-            }, .@"error", "i/o error: {s}", .{@errorName(err)});
+            }, .io_error, .{ .error_code = err });
         },
     };
 
-    try diagnostics.print(stderr.writer());
+    try diagnostics.render(stderr.writer());
 
     return if (diagnostics.hasErrors())
         1
@@ -151,7 +155,7 @@ pub fn main() !u8 {
 
 fn compileFile(
     allocator: std.mem.Allocator,
-    diagnostics: *ptk.Diagnostics,
+    diagnostics: *Diagnostics,
     string_pool: *ptk.strings.Pool,
     input_file: std.fs.File,
     file_name: []const u8,

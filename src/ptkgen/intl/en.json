@@ -1,0 +1,33 @@
+{
+    "diagnostics": {
+        "out_of_memory": "Out of memory",
+        "file_limit_exceeded": "Input file exceeds maximum file size",
+        "io_error": "I/O error: {[error_code]}",
+        "invalid_source_encoding": "Invalid source code encoding detected",
+        "unexpected_token_eof": "Expected token {[expected_type]}, but end of file was discovered",
+        "unexpected_token": "Expected token {[expected_type]}, but discovered token {[actual_type]} ('{[actual_text]}')",
+        "unexpected_character": "Unexpected character: '{[character]}'",
+        "unexpected_eof": "Unexpected end of file",
+        "bad_string_escape": "Invalid string escape: Escape sequence at the end of string",
+        "invalid_string_escape": "Invalid string escape \\{[escape]}",
+        "excess_tokens": "Excess token at the end of the file: {[token_type]}"
+    },
+    "errors": {
+        "Unexpected": "unexpected error encountered",
+        "OutOfMemory": "out of memory",
+        "InputOutput": "input output",
+        "AccessDenied": "access denied",
+        "BrokenPipe": "broken pipe",
+        "SystemResources": "system resources",
+        "OperationAborted": "operation aborted",
+        "WouldBlock": "would block",
+        "ConnectionResetByPeer": "connection reset by peer",
+        "IsDir": "path points to directory",
+        "ConnectionTimedOut": "connection timed out",
+        "NotOpenForReading": "not open for reading",
+        "NetNameDeleted": "net name deleted",
+        "StreamTooLong": "stream too long",
+        "SyntaxError": "syntax error",
+        "InvalidSourceEncoding": "invalid source encoding"
+    }
+}
