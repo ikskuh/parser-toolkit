@@ -108,10 +108,10 @@ pub const Production = union(enum) {
     literal: StringLiteral, // "text"
     terminal: TokenRef, // $token
     recursion: RuleRef, // <rule>
-    sequence: List(Production), // ( ... )
-    optional: *Production, // ...?
-    repetition_zero: *Production, // [ ... ]*
-    repetition_one: *Production, // [ ... ]+
+    sequence: List(Production), // ...
+    optional: List(Production), // ( ... )?
+    repetition_zero: List(Production), // [ ... ]*
+    repetition_one: List(Production), // [ ... ]+
 };
 
 pub const AstMapping = union(enum) {

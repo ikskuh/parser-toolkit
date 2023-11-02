@@ -1,2 +1,1 @@
-# This file contains a single rule with no well-defined start point:
 rule basic = "basic" "words" "after" "another";

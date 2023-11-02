@@ -94,11 +94,18 @@ const parser_ok_files = [_][]const u8{
     "test/parser/accept/empty.ptk",
     "test/parser/accept/empty-with-comment-linefeed.ptk",
     "test/parser/accept/empty-with-comment.ptk",
-    // "test/parser/accept/identifiers.ptk",
+    "test/parser/accept/identifiers.ptk",
     // "examples/ptkgen/ast-with-unions.ptk", // TODO: Move to examples
 } ++ analyis_ok_files;
 
 const analyis_ok_files = [_][]const u8{
     "test/analysis/accept/match-literal-rule.ptk",
     "test/analysis/accept/match-literal-sequence.ptk",
+    "test/analysis/accept/match-literal-variants.ptk",
+    "test/analysis/accept/match-literal-sequence-variant.ptk",
+    "test/analysis/accept/match-group-one-item.ptk",
+    "test/analysis/accept/match-group-one-sequence.ptk",
+    "test/analysis/accept/match-group-many-item.ptk",
+    "test/analysis/accept/match-group-many-sequence.ptk",
+    "test/analysis/accept/match-group-nested.ptk",
 };

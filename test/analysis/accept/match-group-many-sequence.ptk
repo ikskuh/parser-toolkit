@@ -1,0 +1,1 @@
+rule mode = "first" ( "one" "two" "three" ) "third";

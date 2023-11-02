@@ -40,7 +40,7 @@ const AstPrinter = struct {
                     while (prods.next()) |prod| {
                         defer first = false;
                         if (!first) {
-                            print("  | ", .{});
+                            print("\n  | ", .{});
                         } else {
                             print("    ", .{});
                         }
@@ -119,8 +119,8 @@ const AstPrinter = struct {
 
             const text = strpr.printer.strings.get(strpr.str);
             switch (strpr.mode) {
-                .id => try writer.print("\"{}\"", .{std.zig.fmtId(text)}),
-                .text => try writer.print("\"{}\"", .{std.zig.fmtEscapes(text)}),
+                .id => try writer.print("{}", .{std.zig.fmtId(text)}),
+                .text => try writer.print("{}", .{std.zig.fmtEscapes(text)}),
             }
         }
     };

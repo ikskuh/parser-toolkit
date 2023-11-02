@@ -135,7 +135,7 @@ const Parser = struct {
     pool: *ptk.strings.Pool,
     diagnostics: *Diagnostics,
 
-    pub fn acceptDocument(parser: *Parser) !ast.Document {
+    pub fn acceptDocument(parser: *Parser) FatalAcceptError!ast.Document {
         var doc = ast.Document{};
 
         while (true) {
@@ -149,26 +149,7 @@ const Parser = struct {
         return doc;
     }
 
-    fn emitDiagnostic(parser: Parser, loc: ?ptk.Location, comptime code: Diagnostics.Code, data: Diagnostics.Data(code)) !void {
-        // Anything detected here is always an error
-        std.debug.assert(code.isError());
-        try parser.diagnostics.emit(loc orelse parser.core.tokenizer.current_location, code, data);
-    }
-
-    fn emitUnexpectedCharacter(parser: Parser, location: ptk.Location, source_offset: usize) !void {
-        var utf8_view = std.unicode.Utf8View.init(parser.core.tokenizer.source[source_offset..]) catch {
-            try parser.emitDiagnostic(location, .invalid_source_encoding, .{});
-            return error.InvalidSourceEncoding;
-        };
-
-        var iter = utf8_view.iterator();
-
-        try parser.emitDiagnostic(location, .unexpected_character, .{
-            .character = iter.nextCodepoint() orelse @panic("very unexpected end of file"),
-        });
-    }
-
-    fn acceptTopLevelDecl(parser: *Parser) !?ast.TopLevelDeclaration {
+    fn acceptTopLevelDecl(parser: *Parser) FatalAcceptError!?ast.TopLevelDeclaration {
         if (parser.acceptRule()) |rule| {
             return .{ .rule = rule };
         } else |err| try filterAcceptError(err);
@@ -187,7 +168,7 @@ const Parser = struct {
         return null;
     }
 
-    fn acceptRule(parser: *Parser) !ast.Rule {
+    fn acceptRule(parser: *Parser) AcceptError!ast.Rule {
         var state = parser.save();
         errdefer parser.restore(state);
 
@@ -224,7 +205,7 @@ const Parser = struct {
         };
     }
 
-    fn acceptMappedProduction(parser: *Parser) !ast.MappedProduction {
+    fn acceptMappedProduction(parser: *Parser) AcceptError!ast.MappedProduction {
         var sequence = try parser.acceptProductionSequence();
 
         const mapping = if (try parser.tryAcceptLiteral(.@"=>"))
@@ -233,6 +214,7 @@ const Parser = struct {
             null;
 
         return ast.MappedProduction{
+            // Auto-flatten the "tree" here if the top level production is a "sequence" of one
             .production = if (sequence.only()) |item|
                 item
             else
@@ -241,7 +223,7 @@ const Parser = struct {
         };
     }
 
-    fn acceptProductionSequence(parser: *Parser) !ast.List(ast.Production) {
+    fn acceptProductionSequence(parser: *Parser) AcceptError!ast.List(ast.Production) {
         var list: ast.List(ast.Production) = .{};
 
         while (true) {
@@ -256,7 +238,22 @@ const Parser = struct {
         return list;
     }
 
-    fn acceptProduction(parser: *Parser) !ast.Production {
+    fn acceptProduction(parser: *Parser) AcceptError!ast.Production {
+        if (try parser.tryAcceptLiteral(.@"(")) {
+            var sequence = try parser.acceptProductionSequence();
+            try parser.acceptLiteral(.@")", .fail);
+
+            if (try parser.tryAcceptLiteral(.@"?")) {
+                return .{ .optional = sequence };
+            } else if (try parser.tryAcceptLiteral(.@"+")) {
+                return .{ .repetition_one = sequence };
+            } else if (try parser.tryAcceptLiteral(.@"*")) {
+                return .{ .repetition_zero = sequence };
+            } else {
+                return .{ .sequence = sequence };
+            }
+        }
+
         const str = try parser.acceptStringLiteral(.recover);
 
         return ast.Production{
@@ -264,17 +261,17 @@ const Parser = struct {
         };
     }
 
-    fn acceptAstMapping(parser: *Parser) !ast.AstMapping {
+    fn acceptAstMapping(parser: *Parser) AcceptError!ast.AstMapping {
         _ = parser;
         @panic("not implemented yet");
     }
 
-    fn acceptTypeSpec(parser: *Parser) !ast.TypeSpec {
+    fn acceptTypeSpec(parser: *Parser) AcceptError!ast.TypeSpec {
         _ = parser;
         @panic("not implemented yet");
     }
 
-    fn acceptStringLiteral(parser: *Parser, accept_mode: AcceptMode) !ast.StringLiteral {
+    fn acceptStringLiteral(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.StringLiteral {
         const token = try parser.acceptToken(.string_literal, accept_mode);
 
         std.debug.assert(token.text.len >= 2);
@@ -285,7 +282,7 @@ const Parser = struct {
         };
     }
 
-    fn acceptIdentifier(parser: *Parser, accept_mode: AcceptMode) !ast.Identifier {
+    fn acceptIdentifier(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.Identifier {
         const token = try parser.acceptToken(.identifier, accept_mode);
 
         return ast.Identifier{
@@ -294,7 +291,7 @@ const Parser = struct {
         };
     }
 
-    fn acceptLiteral(parser: *Parser, comptime token_type: TokenType, accept_mode: AcceptMode) !void {
+    fn acceptLiteral(parser: *Parser, comptime token_type: TokenType, accept_mode: AcceptMode) AcceptError!void {
         _ = try parser.acceptToken(token_type, accept_mode);
     }
 
@@ -356,6 +353,25 @@ const Parser = struct {
     };
 
     // management:
+
+    fn emitDiagnostic(parser: Parser, loc: ?ptk.Location, comptime code: Diagnostics.Code, data: Diagnostics.Data(code)) !void {
+        // Anything detected here is always an error
+        std.debug.assert(code.isError());
+        try parser.diagnostics.emit(loc orelse parser.core.tokenizer.current_location, code, data);
+    }
+
+    fn emitUnexpectedCharacter(parser: Parser, location: ptk.Location, source_offset: usize) !void {
+        var utf8_view = std.unicode.Utf8View.init(parser.core.tokenizer.source[source_offset..]) catch {
+            try parser.emitDiagnostic(location, .invalid_source_encoding, .{});
+            return error.InvalidSourceEncoding;
+        };
+
+        var iter = utf8_view.iterator();
+
+        try parser.emitDiagnostic(location, .unexpected_character, .{
+            .character = iter.nextCodepoint() orelse @panic("very unexpected end of file"),
+        });
+    }
 
     fn unwrapIdentifierString(parser: *Parser, loc: ptk.Location, raw: []const u8) !ptk.strings.String {
         std.debug.assert(raw.len > 0);

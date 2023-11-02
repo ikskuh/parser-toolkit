@@ -1,0 +1,38 @@
+
+
+
+rule document = [ <top_level> ]* ;
+
+rule top_level =
+      <start_decl>
+    | <token_decl>
+    | <node_decl>
+    | <rule_decl>
+;
+
+# rule start_decl = "start" $rule_ref ";" ;
+
+# rule token_decl = "token" $identifier "="     ";" ;
+
+# rule node_decl = "node" $identifier "="     ";" ;
+
+rule rule_decl = "rule" $identifier ( ":" <type> )? "=" <mapped_productions> ";" ;
+
+rule mapped_productions = <mapped_production> ( "|" <mapped_production> )* ;
+
+rule mapped_production = <production_sequence> ( "=>" <mapping> )? ;
+
+rule production_sequence = ( <production> )+;
+
+rule production =
+    $string_literal
+  | $rule_ref
+  | "(" <production_sequence> ")" "?"
+  | "(" <production_sequence> ")" "*"
+  | "(" <production_sequence> ")" "+"
+  | "(" <production_sequence> ")"
+;
+
+rule mapping = 
+    # TODO
+;
