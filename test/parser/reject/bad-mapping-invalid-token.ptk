@@ -1,0 +1,2 @@
+# expected: E1109
+rule group = "value" => "bad" ;

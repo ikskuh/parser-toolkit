@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const Diagnostics = @import("Diagnostics.zig");
+
 pub const Language = enum {
     en,
 };
@@ -12,7 +14,7 @@ pub const localizations = struct {
     pub const en = Localization.generate(@embedFile("intl/en.json"));
 };
 
-pub const FormattableError = blk: {
+pub const FormattableError: type = blk: {
     const list = @typeInfo(std.meta.fieldInfo(Localization, .errors).type).Struct.fields;
 
     var errors: [list.len]std.builtin.Type.Error = undefined;
@@ -25,22 +27,32 @@ pub const FormattableError = blk: {
     });
 };
 
+pub const DiagnosticStrings: type = blk: {
+    const list = @typeInfo(Diagnostics.Code).Enum.fields;
+
+    var dst_fields: [list.len]std.builtin.Type.StructField = undefined;
+    for (&dst_fields, list) |*dst, src| {
+        dst.* = .{
+            .name = src.name,
+            .type = []const u8,
+            .default_value = null,
+            .is_comptime = false,
+            .alignment = @alignOf([]const u8),
+        };
+    }
+
+    break :blk @Type(.{
+        .Struct = .{
+            .layout = .Auto,
+            .fields = &dst_fields,
+            .decls = &.{},
+            .is_tuple = false,
+        },
+    });
+};
+
 pub const Localization = struct {
-    diagnostics: struct {
-        out_of_memory: []const u8,
-        file_limit_exceeded: []const u8,
-        io_error: []const u8,
-        invalid_source_encoding: []const u8,
-        unexpected_token_eof: []const u8,
-        unexpected_token: []const u8,
-        unexpected_character: []const u8,
-        unexpected_eof: []const u8,
-        bad_string_escape: []const u8,
-        invalid_string_escape: []const u8,
-        excess_tokens: []const u8,
-        illegal_empty_group: []const u8,
-        unexpected_toplevel_token: []const u8,
-    },
+    diagnostics: DiagnosticStrings,
 
     errors: struct {
         Unexpected: []const u8,

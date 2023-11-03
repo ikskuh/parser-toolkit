@@ -82,7 +82,7 @@ pub const TokenType = enum {
     rule_ref, // <rule>
     token_ref, // $token
     value_ref, // $0
-    builtin_ref, // @builtin
+    userval_ref, // @userval
 
     // values
 
@@ -290,8 +290,98 @@ const Parser = struct {
     }
 
     fn acceptAstMapping(parser: *Parser) AcceptError!ast.AstMapping {
+        const position = parser.core.tokenizer.current_location;
+
+        if (parser.acceptUnionInit()) |init| {
+            return .{ .union_init = init };
+        } else |err| try filterAcceptError(err);
+
+        if (parser.acceptCodeLiteral()) |literal| {
+            return .{ .literal = literal };
+        } else |err| try filterAcceptError(err);
+
+        if (parser.acceptValueReference()) |literal| {
+            return .{ .context_reference = literal };
+        } else |err| try filterAcceptError(err);
+
+        if (parser.acceptBuiltinCall()) |call| {
+            return .{ .function_call = call };
+        } else |err| try filterAcceptError(err);
+
+        if (parser.acceptUserCall()) |call| {
+            return .{ .user_function_call = call };
+        } else |err| try filterAcceptError(err);
+
+        if (parser.acceptUserReference()) |ref| {
+            return .{ .user_reference = ref };
+        } else |err| try filterAcceptError(err);
+
+        if (try parser.tryAcceptLiteral(.@";") or try parser.tryAcceptLiteral(.@"|")) {
+            try parser.emitDiagnostic(position, .empty_mapping, .{});
+            return error.SyntaxError;
+        }
+
+        return parser.emitUnexpectedToken();
+    }
+
+    fn acceptUnionInit(parser: *Parser) AcceptError!ast.UnionInitializer {
         _ = parser;
-        @panic("not implemented yet");
+        return error.UnexpectedTokenRecoverable;
+    }
+
+    fn acceptCodeLiteral(parser: *Parser) AcceptError!ast.CodeLiteral {
+        const token = try parser.acceptToken(.code_literal, .recover);
+
+        std.debug.assert(std.mem.startsWith(u8, token.text, "`"));
+        std.debug.assert(std.mem.endsWith(u8, token.text, "`"));
+
+        var prefix_len: usize = 0;
+        while (token.text[prefix_len] == '`') {
+            prefix_len += 1;
+        }
+
+        return ast.CodeLiteral{
+            .location = token.location,
+            .value = try parser.pool.insert(token.text[prefix_len .. token.text.len - prefix_len]),
+        };
+    }
+
+    fn acceptValueReference(parser: *Parser) AcceptError!ast.ValueRef {
+        const token = try parser.acceptToken(.value_ref, .recover);
+        std.debug.assert(std.mem.startsWith(u8, token.text, "$"));
+        return ast.ValueRef{
+            .location = token.location,
+            .index = std.fmt.parseInt(u32, token.text[1..], 10) catch |err| switch (err) {
+                error.InvalidCharacter => unreachable, // ensured by tokenizer,
+                error.Overflow => blk: {
+                    try parser.emitDiagnostic(token.location, .integer_overflow, .{
+                        .min = comptime std.fmt.comptimePrint("{}", .{std.math.minInt(u32)}),
+                        .max = comptime std.fmt.comptimePrint("{}", .{std.math.maxInt(u32)}),
+                        .actual = token.text[1..],
+                    });
+                    break :blk 0;
+                },
+            },
+        };
+    }
+
+    fn acceptBuiltinCall(parser: *Parser) AcceptError!ast.FunctionCall(ast.Identifier) {
+        _ = parser;
+        return error.UnexpectedTokenRecoverable;
+    }
+
+    fn acceptUserCall(parser: *Parser) AcceptError!ast.FunctionCall(ast.UserDefinedIdentifier) {
+        _ = parser;
+        return error.UnexpectedTokenRecoverable;
+    }
+
+    fn acceptUserReference(parser: *Parser) AcceptError!ast.UserDefinedIdentifier {
+        const token = try parser.acceptToken(.userval_ref, .recover);
+        std.debug.assert(std.mem.startsWith(u8, token.text, "@"));
+        return ast.UserDefinedIdentifier{
+            .location = token.location,
+            .value = try parser.pool.insert(token.text[1..]),
+        };
     }
 
     fn acceptTypeSpec(parser: *Parser) AcceptError!ast.TypeSpec {
@@ -413,6 +503,31 @@ const Parser = struct {
         // Anything detected here is always an error
         std.debug.assert(code.isError());
         try parser.diagnostics.emit(loc orelse parser.core.tokenizer.current_location, code, data);
+    }
+
+    fn emitUnexpectedToken(parser: *Parser) AcceptError {
+        const state = parser.save();
+        defer parser.restore(state);
+
+        const location = parser.core.tokenizer.current_location;
+        const offset = parser.core.tokenizer.offset;
+
+        const token_or_null = parser.core.nextToken() catch |err| switch (err) {
+            error.UnexpectedCharacter => {
+                try parser.emitUnexpectedCharacter(location, offset);
+                return error.SyntaxError;
+            },
+        };
+
+        const token = token_or_null orelse {
+            try parser.emitDiagnostic(location, .unexpected_eof, .{});
+            return error.SyntaxError;
+        };
+
+        try parser.emitDiagnostic(location, .unexpected_token_no_context, .{
+            .actual_type = token.type,
+        });
+        return error.SyntaxError;
     }
 
     fn emitUnexpectedCharacter(parser: Parser, location: ptk.Location, source_offset: usize) !void {
@@ -577,7 +692,7 @@ const Tokenizer = ptk.Tokenizer(TokenType, &.{
     Pattern.create(.rule_ref, matchRuleRef),
     Pattern.create(.token_ref, matchTokenRef),
     Pattern.create(.value_ref, matchValueRef),
-    Pattern.create(.builtin_ref, matchBuiltinRef),
+    Pattern.create(.userval_ref, matchBuiltinRef),
 
     // Whitespace is the "kitchen sink" at the end:
     Pattern.create(.whitespace, match.takeAnyOf(" \r\n\t")),

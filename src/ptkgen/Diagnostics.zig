@@ -28,9 +28,12 @@ pub const Code = enum(u16) {
     invalid_string_escape = 1106,
     excess_tokens = 1107,
     unexpected_toplevel_token = 1108,
+    unexpected_token_no_context = 1109,
 
     // recoverable syntax errors:
     illegal_empty_group = 1200,
+    empty_mapping = 1201,
+    integer_overflow = 1202,
 
     comptime {
         std.debug.assert(first_error < first_warning);
@@ -73,6 +76,9 @@ pub fn Data(comptime code: Code) type {
             actual_type: parser.TokenType,
             actual_text: []const u8,
         },
+        .unexpected_token_no_context => struct {
+            actual_type: parser.TokenType,
+        },
         .unexpected_eof => NoDiagnosticData,
 
         .invalid_source_encoding => NoDiagnosticData,
@@ -83,6 +89,13 @@ pub fn Data(comptime code: Code) type {
         .excess_tokens => struct { token_type: parser.TokenType },
 
         .illegal_empty_group => NoDiagnosticData,
+        .empty_mapping => NoDiagnosticData,
+
+        .integer_overflow => struct {
+            min: []const u8,
+            max: []const u8,
+            actual: []const u8,
+        },
 
         // else => @compileError(std.fmt.comptimePrint("Code {} has no diagnostic type associated!", .{code})),
     };

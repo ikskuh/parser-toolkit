@@ -12,7 +12,10 @@
         "bad_string_escape": "Invalid string escape: Escape sequence at the end of string",
         "invalid_string_escape": "Invalid string escape \\{[escape]}",
         "excess_tokens": "Excess token at the end of the file: {[token_type]}",
-        "illegal_empty_group": "Production sequence may not be empty"
+        "illegal_empty_group": "Production sequence may not be empty",
+        "unexpected_token_no_context": "Unexpected token '{[actual_type]}'",
+        "empty_mapping": "Empty mappings are not allowed",
+        "integer_overflow": "Integer value {[actual]} out of range. Values must be between {[min]} and {[max]}"
     },
     "errors": {
         "Unexpected": "unexpected error encountered",

@@ -65,7 +65,7 @@ fn String(comptime Tag: anytype) type {
 pub const Identifier = String(.identifier);
 pub const StringLiteral = String(.string);
 pub const CodeLiteral = String(.code);
-pub const BuiltinLiteral = String(.builtin);
+pub const UserDefinedIdentifier = String(.user_defined);
 
 pub const Document = List(TopLevelDeclaration);
 
@@ -119,8 +119,9 @@ pub const AstMapping = union(enum) {
     constructor: List(FieldAssignment), // { field = ..., field = ... }
     literal: CodeLiteral, // field: value
     context_reference: ValueRef, // $0
-    user_reference: BuiltinLiteral, // @field
-    function_call: FunctionCall, // ...(a,b,c)
+    user_reference: UserDefinedIdentifier, // @field
+    user_function_call: FunctionCall(UserDefinedIdentifier), // @builtin(a,b,c)
+    function_call: FunctionCall(Identifier), // identifier(a,b,c)
     union_init: UnionInitializer,
 };
 
@@ -129,10 +130,12 @@ pub const UnionInitializer = struct {
     value: *AstMapping,
 };
 
-pub const FunctionCall = struct {
-    function: *AstMapping,
-    arguments: List(AstMapping),
-};
+pub fn FunctionCall(comptime Name: type) type {
+    return struct {
+        function: Name,
+        arguments: List(AstMapping),
+    };
+}
 
 pub const FieldAssignment = struct {
     location: Location,

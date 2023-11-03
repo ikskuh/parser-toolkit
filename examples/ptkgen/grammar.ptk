@@ -34,6 +34,30 @@ rule production =
   | "(" <production_sequence> ")"
 ;
 
-# rule mapping = 
-#     # TODO
-# ;
+rule mapping = 
+    $identifier ":" <mapped_value>
+  | <mapped_value>
+;
+
+rule mapped_value =
+    <struct_ctor>                   # { field = <value>, field = <value>, ... }
+  | <list_ctor>                     # { <value>, <value>, ... }
+  | $code_literal                   # `code`
+  | $value_ref                      # $0
+  | $userval "(" <value_list> ")"   # @func(...)
+  | $userval                        # @value
+;
+
+rule struct_ctor = 
+    "{" <assign_field> ( "," <assign_field> )* "}"
+;
+
+rule assign_field = 
+    $identifier "=" $mapped_value
+;
+
+rule list_ctor = "{" <value_list> "}";
+
+rule value_list =
+    <mapped_value> ( "," <mapped_value> )*
+;

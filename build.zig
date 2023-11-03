@@ -147,15 +147,23 @@ const parser_ok_files = [_][]const u8{
 
     "test/parser/accept/document-start.ptk",
 
+    "test/parser/accept/mapping-value-ref.ptk",
+    "test/parser/accept/mapping-code-literal.ptk",
+    "test/parser/accept/mapping-user-value.ptk",
+
     // "examples/ptkgen/ast-with-unions.ptk", // TODO: Move to examples
 } ++ analyis_ok_files;
 
 const parser_reject_files = [_][]const u8{
-    "test/parser/reject/empty-rule.rule",
-    "test/parser/reject/empty-group.rule",
-    "test/parser/reject/empty-optional.rule",
-    "test/parser/reject/empty-rep_one.rule",
-    "test/parser/reject/empty-rep_zero.rule",
+    "test/parser/reject/empty-rule.ptk",
+    "test/parser/reject/empty-group.ptk",
+    "test/parser/reject/empty-optional.ptk",
+    "test/parser/reject/empty-rep_one.ptk",
+    "test/parser/reject/empty-rep_zero.ptk",
 
-    "test/parser/reject/unexpected-token-string.rule",
+    "test/parser/reject/unexpected-token-string.ptk",
+
+    "test/parser/reject/empty-mapping.ptk",
+    "test/parser/reject/bad-mapping-invalid-token.ptk",
+    "test/parser/reject/bad-mapping-too-long.ptk",
 };

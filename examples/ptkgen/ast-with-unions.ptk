@@ -56,7 +56,7 @@ node TLDeclaration = union
 ;
 
 rule toplevel-decl : !TLDeclaration = 
-      <namespace-group> => ns: $0, # this is syntax for a union field selector as unions are not compounds
-    | <interface-decl>  => interface: $0,
-    | <module-decl>     => module: $0,
+      <namespace-group> => ns: $0 # this is syntax for a union field selector as unions are not compounds
+    | <interface-decl>  => interface: $0
+    | <module-decl>     => module: $0
 ;
