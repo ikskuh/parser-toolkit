@@ -116,16 +116,18 @@ pub const Production = union(enum) {
 };
 
 pub const AstMapping = union(enum) {
-    constructor: List(FieldAssignment), // { field = ..., field = ... }
+    record: List(FieldAssignment), // { field = ..., field = ... }
+    list: List(AstMapping), // { ..., ..., ... }
+    variant: VariantInitializer, // field: ...
+
     literal: CodeLiteral, // field: value
     context_reference: ValueRef, // $0
     user_reference: UserDefinedIdentifier, // @field
     user_function_call: FunctionCall(UserDefinedIdentifier), // @builtin(a,b,c)
     function_call: FunctionCall(Identifier), // identifier(a,b,c)
-    union_init: UnionInitializer,
 };
 
-pub const UnionInitializer = struct {
+pub const VariantInitializer = struct {
     field: Identifier,
     value: *AstMapping,
 };

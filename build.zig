@@ -151,6 +151,23 @@ const parser_ok_files = [_][]const u8{
     "test/parser/accept/mapping-code-literal.ptk",
     "test/parser/accept/mapping-user-value.ptk",
 
+    "test/parser/accept/mapping-builtin-function-a0.ptk",
+    "test/parser/accept/mapping-builtin-function-a1.ptk",
+    "test/parser/accept/mapping-builtin-function-a5.ptk",
+    "test/parser/accept/mapping-builtin-function-nest.ptk",
+
+    "test/parser/accept/mapping-user-function-a0.ptk",
+    "test/parser/accept/mapping-user-function-a1.ptk",
+    "test/parser/accept/mapping-user-function-a5.ptk",
+    "test/parser/accept/mapping-user-function-nest.ptk",
+
+    "test/parser/accept/mapping-array-a0.ptk",
+    "test/parser/accept/mapping-array-a1.ptk",
+    "test/parser/accept/mapping-array-a5.ptk",
+    "test/parser/accept/mapping-array-nested.ptk",
+
+    "test/parser/accept/mapping-variant-init.ptk",
+
     // "examples/ptkgen/ast-with-unions.ptk", // TODO: Move to examples
 } ++ analyis_ok_files;
 

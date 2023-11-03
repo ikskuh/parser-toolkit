@@ -66,13 +66,14 @@ const AstPrinter = struct {
     fn dumpAstType(printer: AstPrinter, typespec: ast.TypeSpec) void {
         _ = printer;
         _ = typespec;
-        std.debug.print("<TYPE HERE>", .{});
+        print("<TYPE HERE>", .{});
     }
 
     fn dumpMappedProd(printer: AstPrinter, mapped_prod: ast.MappedProduction) void {
         printer.dumpProd(mapped_prod.production);
 
         if (mapped_prod.mapping) |mapping| {
+            print(" => ", .{});
             printer.dumpMapping(mapping);
         }
     }
@@ -105,9 +106,58 @@ const AstPrinter = struct {
     }
 
     fn dumpMapping(printer: AstPrinter, mapping: ast.AstMapping) void {
-        _ = printer;
-        _ = mapping;
-        print("<MAPPING HERE>", .{});
+        switch (mapping) {
+            .record => |record| {
+                _ = record;
+                @panic("printing not implemented yet");
+            },
+
+            .list => |list| {
+                if (list.len() > 0) {
+                    print("{{ ", .{});
+                    printer.dumpMappingList(list);
+                    print(" }}", .{});
+                } else {
+                    print("{{}}", .{});
+                }
+            },
+
+            .variant => |variant| {
+                print("{}: ", .{printer.fmtId(variant.field.value)});
+                printer.dumpMapping(variant.value.*);
+            },
+
+            .literal => |literal| print("`{s}`", .{printer.strings.get(literal.value)}),
+
+            .context_reference => |context_reference| print("${}", .{context_reference.index}),
+
+            .user_reference => |user_reference| print("@{}", .{printer.fmtId(user_reference.value)}),
+
+            .user_function_call => |user_function_call| {
+                print("@{}(", .{printer.fmtId(user_function_call.function.value)});
+                printer.dumpMappingList(user_function_call.arguments);
+                print(")", .{});
+            },
+
+            .function_call => |function_call| {
+                print("{}(", .{printer.fmtId(function_call.function.value)});
+                printer.dumpMappingList(function_call.arguments);
+                print(")", .{});
+            },
+        }
+    }
+
+    fn dumpMappingList(printer: AstPrinter, list: ast.List(ast.AstMapping)) void {
+        var first = true;
+        var iter = ast.iterate(list);
+        while (iter.next()) |arg| {
+            if (!first) {
+                print(", ", .{});
+            }
+            first = false;
+
+            printer.dumpMapping(arg);
+        }
     }
 
     fn fmtString(printer: AstPrinter, str: ptk.strings.String) StringPrinter {

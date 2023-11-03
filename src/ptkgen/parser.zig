@@ -223,7 +223,7 @@ const Parser = struct {
         var sequence = try parser.acceptProductionSequence();
 
         const mapping = if (try parser.tryAcceptLiteral(.@"=>"))
-            try parser.acceptAstMapping()
+            try parser.acceptAstMapping(.fail)
         else
             null;
 
@@ -289,11 +289,22 @@ const Parser = struct {
         return error.UnexpectedTokenRecoverable;
     }
 
-    fn acceptAstMapping(parser: *Parser) AcceptError!ast.AstMapping {
+    fn acceptAstMapping(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.AstMapping {
+        const state = parser.save();
+        errdefer parser.restore(state);
+
         const position = parser.core.tokenizer.current_location;
 
-        if (parser.acceptUnionInit()) |init| {
-            return .{ .union_init = init };
+        if (parser.acceptVariantInit()) |init| {
+            return .{ .variant = init };
+        } else |err| try filterAcceptError(err);
+
+        if (parser.acceptRecordInit()) |init| {
+            return .{ .record = init };
+        } else |err| try filterAcceptError(err);
+
+        if (parser.acceptListInit()) |init| {
+            return .{ .list = init };
         } else |err| try filterAcceptError(err);
 
         if (parser.acceptCodeLiteral()) |literal| {
@@ -321,12 +332,49 @@ const Parser = struct {
             return error.SyntaxError;
         }
 
-        return parser.emitUnexpectedToken();
+        switch (accept_mode) {
+            .recover => return error.UnexpectedTokenRecoverable,
+            .fail => return parser.emitUnexpectedToken(),
+        }
     }
 
-    fn acceptUnionInit(parser: *Parser) AcceptError!ast.UnionInitializer {
-        _ = parser;
+    fn acceptVariantInit(parser: *Parser) AcceptError!ast.VariantInitializer {
+        const state = parser.save();
+        errdefer parser.restore(state);
+
+        const field = try parser.acceptIdentifier(.recover);
+
+        try parser.acceptLiteral(.@":", .recover);
+
+        const value = try parser.acceptAstMapping(.fail);
+
+        const clone = try parser.arena.create(ast.AstMapping);
+        clone.* = value;
+
+        return .{
+            .field = field,
+            .value = clone,
+        };
+    }
+
+    fn acceptRecordInit(parser: *Parser) AcceptError!ast.List(ast.FieldAssignment) {
+        const state = parser.save();
+        errdefer parser.restore(state);
+
         return error.UnexpectedTokenRecoverable;
+    }
+
+    fn acceptListInit(parser: *Parser) AcceptError!ast.List(ast.AstMapping) {
+        const state = parser.save();
+        errdefer parser.restore(state);
+
+        try parser.acceptLiteral(.@"{", .recover);
+
+        var items = try parser.acceptMappingList();
+
+        try parser.acceptLiteral(.@"}", .fail);
+
+        return items;
     }
 
     fn acceptCodeLiteral(parser: *Parser) AcceptError!ast.CodeLiteral {
@@ -366,13 +414,40 @@ const Parser = struct {
     }
 
     fn acceptBuiltinCall(parser: *Parser) AcceptError!ast.FunctionCall(ast.Identifier) {
-        _ = parser;
-        return error.UnexpectedTokenRecoverable;
+        const state = parser.save();
+        errdefer parser.restore(state);
+
+        const id = try parser.acceptIdentifier(.recover);
+
+        try parser.acceptLiteral(.@"(", .fail); // a builtin function is the only legal way to use an identifier here, so we fail unrecoverably
+
+        const list = try parser.acceptMappingList();
+
+        try parser.acceptLiteral(.@")", .fail);
+
+        return .{
+            .function = id,
+            .arguments = list,
+        };
     }
 
     fn acceptUserCall(parser: *Parser) AcceptError!ast.FunctionCall(ast.UserDefinedIdentifier) {
-        _ = parser;
-        return error.UnexpectedTokenRecoverable;
+        const state = parser.save();
+        errdefer parser.restore(state);
+
+        const id = try parser.acceptUserReference();
+
+        // If we only accept a user value, fail and fall back to regular user value acceptance later
+        try parser.acceptLiteral(.@"(", .recover);
+
+        const list = try parser.acceptMappingList();
+
+        try parser.acceptLiteral(.@")", .fail);
+
+        return .{
+            .function = id,
+            .arguments = list,
+        };
     }
 
     fn acceptUserReference(parser: *Parser) AcceptError!ast.UserDefinedIdentifier {
@@ -382,6 +457,35 @@ const Parser = struct {
             .location = token.location,
             .value = try parser.pool.insert(token.text[1..]),
         };
+    }
+
+    fn acceptMappingList(parser: *Parser) AcceptError!ast.List(ast.AstMapping) {
+        const list_state = parser.save();
+        errdefer parser.restore(list_state);
+
+        var list = ast.List(ast.AstMapping){};
+
+        var accept_mode: AcceptMode = .recover;
+        while (true) {
+            // first item is allowed to be failing, otherwise comma separation must be done!
+            defer accept_mode = .fail;
+
+            const item_state = parser.save();
+
+            if (parser.acceptAstMapping(accept_mode)) |mapping| {
+                try parser.append(ast.AstMapping, &list, mapping);
+            } else |err| {
+                try filterAcceptError(err);
+                parser.restore(item_state); // rollback to the previous item
+                break;
+            }
+
+            if (!try parser.tryAcceptLiteral(.@",")) {
+                break;
+            }
+        }
+
+        return list;
     }
 
     fn acceptTypeSpec(parser: *Parser) AcceptError!ast.TypeSpec {

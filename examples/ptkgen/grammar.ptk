@@ -35,12 +35,12 @@ rule production =
 ;
 
 rule mapping = 
-    $identifier ":" <mapped_value>
-  | <mapped_value>
+    $identifier ":" <mapped_value> # variant init
+  | <mapped_value>                 # regular init
 ;
 
 rule mapped_value =
-    <struct_ctor>                   # { field = <value>, field = <value>, ... }
+    <record_ctor>                   # { field = <value>, field = <value>, ... }
   | <list_ctor>                     # { <value>, <value>, ... }
   | $code_literal                   # `code`
   | $value_ref                      # $0
