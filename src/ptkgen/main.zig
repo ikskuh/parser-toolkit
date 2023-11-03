@@ -22,6 +22,7 @@ pub const CliOptions = struct {
     help: bool = false,
     output: ?[]const u8 = null,
     test_mode: TestMode = .none,
+    trace: bool = false,
 
     @"max-file-size": u32 = 4 * 1024, // 4 MB of source code is a lot!
 
@@ -42,6 +43,8 @@ pub const CliOptions = struct {
             .test_mode = "(internal use only, required for testing)",
 
             .@"max-file-size" = "Maximum input file size in KiB (default: 4096)",
+
+            .trace = "Prints a parse trace",
         },
     };
 };
@@ -140,6 +143,7 @@ pub fn main() AppError!u8 {
             source_code,
             file_name,
             cli.options.test_mode,
+            cli.options.trace,
         ) catch |err| {
             try convertErrorToDiagnostics(&diagnostics, file_name, err);
             break :process_file false;
@@ -266,13 +270,17 @@ fn compileFile(
     source_code: []const u8,
     file_name: []const u8,
     mode: TestMode,
+    trace_enabled: bool,
 ) !void {
     var tree = try parser.parse(
-        allocator,
-        diagnostics,
-        string_pool,
-        file_name,
-        source_code,
+        .{
+            .allocator = allocator,
+            .diagnostics = diagnostics,
+            .string_pool = string_pool,
+            .file_name = file_name,
+            .source_code = source_code,
+            .trace_enabled = trace_enabled,
+        },
     );
     defer tree.deinit();
 

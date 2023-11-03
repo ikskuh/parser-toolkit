@@ -17,26 +17,46 @@ pub const Document = struct {
     }
 };
 
-pub fn parse(allocator: std.mem.Allocator, diagnostics: *Diagnostics, string_pool: *ptk.strings.Pool, file_name: []const u8, source_code: []const u8) !Document {
-    var arena = std.heap.ArenaAllocator.init(allocator);
+pub fn parse(opt: struct {
+    allocator: std.mem.Allocator,
+    diagnostics: *Diagnostics,
+    string_pool: *ptk.strings.Pool,
+    file_name: []const u8,
+    source_code: []const u8,
+    trace_enabled: bool,
+}) !Document {
+    var arena = std.heap.ArenaAllocator.init(opt.allocator);
     errdefer arena.deinit();
 
-    const file_name_copy = try arena.allocator().dupe(u8, file_name);
+    const file_name_copy = try arena.allocator().dupe(u8, opt.file_name);
 
-    var tokenizer = Tokenizer.init(source_code, file_name_copy);
+    var tokenizer = Tokenizer.init(opt.source_code, file_name_copy);
 
     var parser = Parser{
         .core = ParserCore.init(&tokenizer),
         .arena = arena.allocator(),
-        .pool = string_pool,
-        .diagnostics = diagnostics,
+        .pool = opt.string_pool,
+        .diagnostics = opt.diagnostics,
+        .trace_enabled = opt.trace_enabled,
     };
 
     const document_node = parser.acceptDocument() catch |err| switch (err) {
 
         // Unrecoverable syntax error, must have created diagnostics already
-        error.SyntaxError, error.InvalidSourceEncoding => |e| {
-            std.debug.assert(diagnostics.hasErrors());
+        error.SyntaxError => |e| {
+            std.debug.assert(opt.diagnostics.hasErrors());
+
+            if (opt.trace_enabled) {
+                if (@errorReturnTrace()) |trace| {
+                    std.debug.dumpStackTrace(trace.*);
+                }
+            }
+
+            return e;
+        },
+        error.InvalidSourceEncoding => |e| {
+            std.debug.assert(opt.diagnostics.hasErrors());
+
             return e;
         },
 
@@ -45,7 +65,7 @@ pub fn parse(allocator: std.mem.Allocator, diagnostics: *Diagnostics, string_poo
 
     if (tokenizer.next()) |token_or_null| {
         if (token_or_null) |token| {
-            try diagnostics.emit(token.location, .excess_tokens, .{ .token_type = token.type });
+            try opt.diagnostics.emit(token.location, .excess_tokens, .{ .token_type = token.type });
             return error.SyntaxError;
         }
     } else |_| {
@@ -128,7 +148,13 @@ const Parser = struct {
     pool: *ptk.strings.Pool,
     diagnostics: *Diagnostics,
 
+    trace_enabled: bool,
+    trace_depth: u32 = 0,
+
     pub fn acceptDocument(parser: *Parser) FatalAcceptError!ast.Document {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         var doc = ast.Document{};
 
         while (true) {
@@ -143,6 +169,9 @@ const Parser = struct {
     }
 
     fn acceptTopLevelDecl(parser: *Parser) FatalAcceptError!?ast.TopLevelDeclaration {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         if (parser.acceptStartDecl()) |root_rule| {
             return .{ .start = root_rule };
         } else |err| try filterAcceptError(err);
@@ -174,6 +203,9 @@ const Parser = struct {
     }
 
     fn acceptStartDecl(parser: *Parser) AcceptError!ast.RuleRef {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         try parser.acceptLiteral(.start, .recover);
         const init_rule = try parser.acceptRuleReference(.fail);
 
@@ -183,6 +215,9 @@ const Parser = struct {
     }
 
     fn acceptRule(parser: *Parser) AcceptError!ast.Rule {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         var state = parser.save();
         errdefer parser.restore(state);
 
@@ -220,6 +255,9 @@ const Parser = struct {
     }
 
     fn acceptMappedProduction(parser: *Parser) AcceptError!ast.MappedProduction {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         var sequence = try parser.acceptProductionSequence();
 
         const mapping = if (try parser.tryAcceptLiteral(.@"=>"))
@@ -238,6 +276,9 @@ const Parser = struct {
     }
 
     fn acceptProductionSequence(parser: *Parser) AcceptError!ast.List(ast.Production) {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         var list: ast.List(ast.Production) = .{};
 
         while (true) {
@@ -258,6 +299,9 @@ const Parser = struct {
     }
 
     fn acceptProduction(parser: *Parser) AcceptError!ast.Production {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         if (try parser.tryAcceptLiteral(.@"(")) {
             var sequence = try parser.acceptProductionSequence();
             try parser.acceptLiteral(.@")", .fail);
@@ -290,6 +334,9 @@ const Parser = struct {
     }
 
     fn acceptAstMapping(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.AstMapping {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const state = parser.save();
         errdefer parser.restore(state);
 
@@ -339,6 +386,9 @@ const Parser = struct {
     }
 
     fn acceptVariantInit(parser: *Parser) AcceptError!ast.VariantInitializer {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const state = parser.save();
         errdefer parser.restore(state);
 
@@ -358,13 +408,65 @@ const Parser = struct {
     }
 
     fn acceptRecordInit(parser: *Parser) AcceptError!ast.List(ast.FieldAssignment) {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const state = parser.save();
         errdefer parser.restore(state);
 
-        return error.UnexpectedTokenRecoverable;
+        try parser.acceptLiteral(.@"{", .recover);
+
+        var mode: AcceptMode = .recover;
+
+        var list = ast.List(ast.FieldAssignment){};
+        while (true) {
+            // First item might fail, then it's not a record initializer, but
+            // afterwards, all fields must comply
+            defer mode = .fail;
+
+            const node = try parser.acceptFieldInit(mode);
+
+            try parser.append(ast.FieldAssignment, &list, node);
+
+            if (!try parser.tryAcceptLiteral(.@",")) {
+                break;
+            }
+        }
+
+        try parser.acceptLiteral(.@"}", .fail);
+
+        return list;
+    }
+
+    fn acceptFieldInit(parser: *Parser, mode: AcceptMode) AcceptError!ast.FieldAssignment {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
+        const state = parser.save();
+        errdefer parser.restore(state);
+
+        const location = parser.core.tokenizer.current_location;
+
+        const field = try parser.acceptIdentifier(mode);
+
+        try parser.acceptLiteral(.@"=", .fail);
+
+        const value = try parser.acceptAstMapping(.fail);
+
+        const clone = try parser.arena.create(ast.AstMapping);
+        clone.* = value;
+
+        return .{
+            .location = location,
+            .field = field,
+            .value = clone,
+        };
     }
 
     fn acceptListInit(parser: *Parser) AcceptError!ast.List(ast.AstMapping) {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const state = parser.save();
         errdefer parser.restore(state);
 
@@ -378,6 +480,9 @@ const Parser = struct {
     }
 
     fn acceptCodeLiteral(parser: *Parser) AcceptError!ast.CodeLiteral {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const token = try parser.acceptToken(.code_literal, .recover);
 
         std.debug.assert(std.mem.startsWith(u8, token.text, "`"));
@@ -395,6 +500,9 @@ const Parser = struct {
     }
 
     fn acceptValueReference(parser: *Parser) AcceptError!ast.ValueRef {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const token = try parser.acceptToken(.value_ref, .recover);
         std.debug.assert(std.mem.startsWith(u8, token.text, "$"));
         return ast.ValueRef{
@@ -414,6 +522,9 @@ const Parser = struct {
     }
 
     fn acceptBuiltinCall(parser: *Parser) AcceptError!ast.FunctionCall(ast.Identifier) {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const state = parser.save();
         errdefer parser.restore(state);
 
@@ -432,6 +543,9 @@ const Parser = struct {
     }
 
     fn acceptUserCall(parser: *Parser) AcceptError!ast.FunctionCall(ast.UserDefinedIdentifier) {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const state = parser.save();
         errdefer parser.restore(state);
 
@@ -451,6 +565,9 @@ const Parser = struct {
     }
 
     fn acceptUserReference(parser: *Parser) AcceptError!ast.UserDefinedIdentifier {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const token = try parser.acceptToken(.userval_ref, .recover);
         std.debug.assert(std.mem.startsWith(u8, token.text, "@"));
         return ast.UserDefinedIdentifier{
@@ -460,6 +577,9 @@ const Parser = struct {
     }
 
     fn acceptMappingList(parser: *Parser) AcceptError!ast.List(ast.AstMapping) {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const list_state = parser.save();
         errdefer parser.restore(list_state);
 
@@ -489,11 +609,16 @@ const Parser = struct {
     }
 
     fn acceptTypeSpec(parser: *Parser) AcceptError!ast.TypeSpec {
-        _ = parser;
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         @panic("not implemented yet");
     }
 
     fn acceptStringLiteral(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.StringLiteral {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const token = try parser.acceptToken(.string_literal, accept_mode);
 
         std.debug.assert(token.text.len >= 2);
@@ -505,6 +630,9 @@ const Parser = struct {
     }
 
     fn acceptIdentifier(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.Identifier {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const token = try parser.acceptToken(.identifier, accept_mode);
         return ast.Identifier{
             .location = token.location,
@@ -513,6 +641,9 @@ const Parser = struct {
     }
 
     fn acceptRuleReference(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.RuleRef {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const token = try parser.acceptToken(.rule_ref, accept_mode);
         std.debug.assert(std.mem.startsWith(u8, token.text, "<"));
         std.debug.assert(std.mem.endsWith(u8, token.text, ">"));
@@ -523,6 +654,9 @@ const Parser = struct {
     }
 
     fn acceptTokenReference(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.TokenRef {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const token = try parser.acceptToken(.token_ref, accept_mode);
         std.debug.assert(std.mem.startsWith(u8, token.text, "$"));
         return ast.TokenRef{
@@ -532,6 +666,9 @@ const Parser = struct {
     }
 
     fn acceptNodeReference(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.NodeRef {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
         const token = try parser.acceptToken(.node_ref, accept_mode);
         std.debug.assert(std.mem.startsWith(u8, token.text, "!"));
         return ast.NodeRef{
@@ -561,8 +698,7 @@ const Parser = struct {
         const location = parser.core.tokenizer.current_location;
 
         if (parser.core.accept(RS.any)) |token| {
-            // std.log.debug("token trace: {}", .{token});
-
+            errdefer parser.emitTrace(.{ .token_reject = .{ .actual = token, .expected = token_type } });
             if (token.type != token_type) {
                 switch (accept_mode) {
                     .fail => {
@@ -576,6 +712,7 @@ const Parser = struct {
                     .recover => return error.UnexpectedTokenRecoverable,
                 }
             }
+            parser.emitTrace(.{ .token_accept = token });
             return token;
         } else |err| switch (err) {
             error.UnexpectedToken => unreachable, // RS.any will always accept the token
@@ -602,6 +739,47 @@ const Parser = struct {
     };
 
     // management:
+    const TraceKind = union(enum) {
+        token_accept: Token,
+        token_reject: struct { actual: Token, expected: TokenType },
+        rule: []const u8,
+    };
+
+    const Trace = struct {
+        depth: u32,
+        kind: TraceKind,
+
+        pub fn format(trace: Trace, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = fmt;
+            _ = opt;
+            try writer.writeByteNTimes(' ', 4 * trace.depth);
+            try writer.print("{s}:", .{@tagName(trace.kind)});
+            switch (trace.kind) {
+                .token_accept => |item| try writer.print("accept {}", .{item}),
+                .token_reject => |item| try writer.print("reject {}, expected '{s}'", .{ item.actual, @tagName(item.expected) }),
+                .rule => |item| try writer.print("{s}", .{item}),
+            }
+        }
+    };
+
+    fn traceEnterRule(parser: *Parser, loc: std.builtin.SourceLocation) void {
+        parser.emitTrace(.{ .rule = loc.fn_name });
+        parser.trace_depth += 1;
+    }
+
+    fn popTrace(parser: *Parser) void {
+        parser.trace_depth -= 1;
+    }
+
+    fn emitTrace(parser: Parser, trace: TraceKind) void {
+        if (!parser.trace_enabled) {
+            return;
+        }
+        std.log.debug("rule trace: {}", .{Trace{
+            .depth = parser.trace_depth,
+            .kind = trace,
+        }});
+    }
 
     fn emitDiagnostic(parser: Parser, loc: ?ptk.Location, comptime code: Diagnostics.Code, data: Diagnostics.Data(code)) !void {
         // Anything detected here is always an error

@@ -168,6 +168,9 @@ const parser_ok_files = [_][]const u8{
 
     "test/parser/accept/mapping-variant-init.ptk",
 
+    "test/parser/accept/mapping-record-init-f1.ptk",
+    "test/parser/accept/mapping-record-init-f3.ptk",
+
     // "examples/ptkgen/ast-with-unions.ptk", // TODO: Move to examples
 } ++ analyis_ok_files;
 

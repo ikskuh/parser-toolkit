@@ -108,8 +108,24 @@ const AstPrinter = struct {
     fn dumpMapping(printer: AstPrinter, mapping: ast.AstMapping) void {
         switch (mapping) {
             .record => |record| {
-                _ = record;
-                @panic("printing not implemented yet");
+                std.debug.assert(record.len() > 0);
+
+                print("{{ ", .{});
+
+                var first = true;
+                var iter = ast.iterate(record);
+                while (iter.next()) |arg| {
+                    if (!first) {
+                        print(", ", .{});
+                    }
+                    first = false;
+
+                    print("{} = ", .{printer.fmtId(arg.field.value)});
+
+                    printer.dumpMapping(arg.value.*);
+                }
+
+                print(" }}", .{});
             },
 
             .list => |list| {
