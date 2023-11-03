@@ -10,11 +10,11 @@ rule top_level =
     | <rule_decl>
 ;
 
-# rule start_decl = "start" $rule_ref ";" ;
+rule start_decl = "start" $rule_ref ";" ;
 
-# rule token_decl = "token" $identifier "="     ";" ;
+rule token_decl = "token" $identifier "="     ";" ;
 
-# rule node_decl = "node" $identifier "="     ";" ;
+rule node_decl = "node" $identifier "="     ";" ;
 
 rule rule_decl = "rule" $identifier ( ":" <type> )? "=" <mapped_productions> ";" ;
 
@@ -40,12 +40,13 @@ rule mapping =
 ;
 
 rule mapped_value =
-    <record_ctor>                   # { field = <value>, field = <value>, ... }
-  | <list_ctor>                     # { <value>, <value>, ... }
-  | $code_literal                   # `code`
-  | $value_ref                      # $0
-  | $userval "(" <value_list> ")"   # @func(...)
-  | $userval                        # @value
+    <record_ctor>                    # { field = <value>, field = <value>, ... }
+  | <list_ctor>                      # { <value>, <value>, ... }
+  | $code_literal                    # `code`
+  | $value_ref                       # $0
+  | $identifier "(" <value_list> ")" # builtin(...)
+  | $userval    "(" <value_list> ")" # @func(...)
+  | $userval                         # @value
 ;
 
 rule struct_ctor = 
@@ -56,7 +57,7 @@ rule assign_field =
     $identifier "=" $mapped_value
 ;
 
-rule list_ctor = "{" <value_list> "}";
+rule list_ctor = "{" ( <value_list> )? "}";
 
 rule value_list =
     <mapped_value> ( "," <mapped_value> )*

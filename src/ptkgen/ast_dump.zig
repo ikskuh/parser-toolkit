@@ -64,9 +64,13 @@ const AstPrinter = struct {
     }
 
     fn dumpAstType(printer: AstPrinter, typespec: ast.TypeSpec) void {
-        _ = printer;
-        _ = typespec;
-        print("<TYPE HERE>", .{});
+        switch (typespec) {
+            .reference => |ref| print("!{}", .{printer.fmtId(ref.identifier)}),
+            .literal => |lit| print("literal `{s}`", .{printer.strings.get(lit.value)}),
+            .custom => @panic("not done yet"),
+            .record => @panic("not done yet"),
+            .variant => @panic("not done yet"),
+        }
     }
 
     fn dumpMappedProd(printer: AstPrinter, mapped_prod: ast.MappedProduction) void {

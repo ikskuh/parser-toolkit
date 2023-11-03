@@ -155,9 +155,9 @@ pub const Pattern = union(enum) {
 pub const TypeSpec = union(enum) {
     reference: NodeRef, // !type
     literal: CodeLiteral, // literal `bool`
-    custom: CodeLiteral, // custom `Custom`
-    @"struct": CompoundType, // struct <fields...>
-    @"union": CompoundType, // union <fields...>
+    custom: UserDefinedIdentifier, // custom `Custom`
+    record: CompoundType, // struct <fields...>
+    variant: CompoundType, // union <fields...>
 };
 
 pub const CompoundType = struct {

@@ -4,16 +4,16 @@
 # var   name: type = value;
 # const name: type = value;
 
-node declaration = struct
-    is_const: literal `bool`,
-    name: !identifier,
-    type: optional !type,
-    value: !value
-;
+# node declaration = struct
+#     is_const: `bool`,
+#     name: !identifier,
+#     type: optional !type,
+#     value: !value
+# ;
 
-node identifier = literal `[]const u8`;
-node type = @TypeId; # enum { int, float, string }
-node value = @Value;
+# node identifier = `[]const u8`;
+# node type = @TypeId; # enum { int, float, string }
+# node value = @Value;
 
 start <decl>;
 
@@ -27,20 +27,20 @@ rule decl : !declaration =
 #   $0_________ $1__ $2_____________ $3  $4_____
 ;
 
-rule <decl-type> : literal `bool` = 
+rule decl-type : `bool` = 
       "var"   => `false`
     | "const" => `true`
 ;
 
-rule <id> : !identifier = "name" => tostring($0);
+rule id : !identifier = "name" => tostring($0);
 
-rule <type> : !type = 
+rule type : !type = 
       "int"    => `.int`
     | "float"  => `.float`
     | "string" => `.string`
 ;
 
-rule <value> : !value = 
+rule value : !value = 
       "10"       => @parseInt($0)
     | "3.14"     => @parseFloat($0)
     | "\"nice\"" => @parseStringLiteral($0)
@@ -49,11 +49,11 @@ rule <value> : !value =
 
 
 # Unions have can only have a single option active at a time
-node TLDeclaration = union 
-    ns        : !namespace,
-    interface : !interface,
-    module    : !module,
-;
+# node TLDeclaration = union 
+#     ns        : !namespace,
+#     interface : !interface,
+#     module    : !module,
+# ;
 
 rule toplevel-decl : !TLDeclaration = 
       <namespace-group> => ns: $0 # this is syntax for a union field selector as unions are not compounds

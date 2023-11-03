@@ -84,13 +84,13 @@ pub const TokenType = enum {
     // keywords
 
     node,
-    @"struct",
+    record,
+    variant,
     optional,
     start,
     rule,
     token,
 
-    literal,
     custom,
     regex,
     skip,
@@ -612,6 +612,18 @@ const Parser = struct {
         parser.traceEnterRule(@src());
         defer parser.popTrace();
 
+        if (parser.acceptCodeLiteral()) |code| {
+            return .{ .literal = code };
+        } else |err| try filterAcceptError(err);
+
+        if (parser.acceptUserReference()) |ref| {
+            return .{ .custom = ref };
+        } else |err| try filterAcceptError(err);
+
+        if (parser.acceptNodeReference(.fail)) |ref| {
+            return .{ .reference = ref };
+        } else |err| try filterAcceptError(err);
+
         @panic("not implemented yet");
     }
 
@@ -936,15 +948,26 @@ const Tokenizer = ptk.Tokenizer(TokenType, &.{
     Pattern.create(.line_comment, match.sequenceOf(.{ match.literal("#"), match.takeNoneOf("\r\n") })),
 
     Pattern.create(.node, match.word("node")),
-    Pattern.create(.@"struct", match.word("struct")),
+    Pattern.create(.record, match.word("record")),
+    Pattern.create(.variant, match.word("variant")),
     Pattern.create(.optional, match.word("optional")),
     Pattern.create(.start, match.word("start")),
     Pattern.create(.rule, match.word("rule")),
     Pattern.create(.token, match.word("token")),
-    Pattern.create(.literal, match.word("literal")),
     Pattern.create(.custom, match.word("custom")),
     Pattern.create(.regex, match.word("regex")),
     Pattern.create(.skip, match.word("skip")),
+
+    Pattern.create(.string_literal, matchStringLiteral),
+    Pattern.create(.code_literal, matchCodeLiteral),
+
+    // identifiers must come after keywords:
+    Pattern.create(.identifier, matchRawIdentifier),
+    Pattern.create(.node_ref, matchNodeRef),
+    Pattern.create(.rule_ref, matchRuleRef),
+    Pattern.create(.token_ref, matchTokenRef),
+    Pattern.create(.value_ref, matchValueRef),
+    Pattern.create(.userval_ref, matchBuiltinRef),
 
     Pattern.create(.@"=>", match.literal("=>")),
 
@@ -964,17 +987,6 @@ const Tokenizer = ptk.Tokenizer(TokenType, &.{
     Pattern.create(.@")", match.literal(")")),
     Pattern.create(.@"{", match.literal("{")),
     Pattern.create(.@"}", match.literal("}")),
-
-    Pattern.create(.string_literal, matchStringLiteral),
-    Pattern.create(.code_literal, matchCodeLiteral),
-
-    // identifiers must come after keywords:
-    Pattern.create(.identifier, matchRawIdentifier),
-    Pattern.create(.node_ref, matchNodeRef),
-    Pattern.create(.rule_ref, matchRuleRef),
-    Pattern.create(.token_ref, matchTokenRef),
-    Pattern.create(.value_ref, matchValueRef),
-    Pattern.create(.userval_ref, matchBuiltinRef),
 
     // Whitespace is the "kitchen sink" at the end:
     Pattern.create(.whitespace, match.takeAnyOf(" \r\n\t")),
