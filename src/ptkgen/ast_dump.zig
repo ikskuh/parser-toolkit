@@ -51,7 +51,8 @@ const AstPrinter = struct {
                 },
 
                 .node => |node| {
-                    print("node {s}", .{printer.fmtId(node.name.value)});
+                    print("node {s} = ", .{printer.fmtId(node.name.value)});
+                    printer.dumpAstType(node.value);
                     print(";\n", .{});
                 },
 
@@ -66,10 +67,32 @@ const AstPrinter = struct {
     fn dumpAstType(printer: AstPrinter, typespec: ast.TypeSpec) void {
         switch (typespec) {
             .reference => |ref| print("!{}", .{printer.fmtId(ref.identifier)}),
-            .literal => |lit| print("literal `{s}`", .{printer.strings.get(lit.value)}),
-            .custom => @panic("not done yet"),
-            .record => @panic("not done yet"),
-            .variant => @panic("not done yet"),
+            .literal => |lit| print("`{s}`", .{printer.strings.get(lit.value)}),
+            .custom => |custom| print("@{}", .{printer.fmtId(custom.value)}),
+            .record, .variant => |compound| {
+                const multi_field = compound.fields.len() > 1;
+
+                print("{s} ", .{@tagName(typespec)});
+                var iter = ast.iterate(compound.fields);
+
+                if (multi_field) {
+                    var line_prefix: []const u8 = "\n    ";
+                    while (iter.next()) |field| {
+                        print("{s}{}: ", .{ line_prefix, printer.fmtId(field.name.value) });
+                        printer.dumpAstType(field.type);
+
+                        if (multi_field) {
+                            line_prefix = ",\n    ";
+                        }
+                    }
+                    print("\n", .{});
+                } else {
+                    const field = iter.next().?;
+
+                    print("{}: ", .{printer.fmtId(field.name.value)});
+                    printer.dumpAstType(field.type);
+                }
+            },
         }
     }
 

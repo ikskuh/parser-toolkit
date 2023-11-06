@@ -1,2 +1,2 @@
-# expected: E1109
+# expected: E1111
 rule group = "value" => "bad" ;

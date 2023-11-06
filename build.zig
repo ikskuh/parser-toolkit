@@ -126,6 +126,8 @@ const analyis_ok_files = [_][]const u8{
     "test/analysis/accept/match-rep_one-many-item.ptk",
     "test/analysis/accept/match-rep_one-many-sequence.ptk",
     "test/analysis/accept/match-rep_one-nested.ptk",
+
+    "examples/ptkgen/ast-with-unions.ptk",
 } ++ example_files;
 
 const parser_ok_files = [_][]const u8{
@@ -175,7 +177,15 @@ const parser_ok_files = [_][]const u8{
     "test/parser/accept/rule-typespec-ref.ptk",
     "test/parser/accept/rule-typespec-literal.ptk",
 
-    // "examples/ptkgen/ast-with-unions.ptk", // TODO: Move to examples
+    "test/parser/accept/node-alias.ptk",
+    "test/parser/accept/node-custom.ptk",
+    "test/parser/accept/node-literal.ptk",
+
+    "test/parser/accept/node-record-f1.ptk",
+    "test/parser/accept/node-record-f4.ptk",
+
+    "test/parser/accept/node-variant-f4.ptk",
+    "test/parser/accept/node-variant-f1.ptk",
 } ++ analyis_ok_files;
 
 const parser_reject_files = [_][]const u8{

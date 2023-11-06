@@ -6,6 +6,8 @@ const Diagnostics = @import("Diagnostics.zig");
 
 const fmtEscapes = std.zig.fmtEscapes;
 
+const BAD_TYPE_SPEC: ast.TypeSpec = undefined;
+
 pub const Document = struct {
     arena: std.heap.ArenaAllocator,
     file_name: []const u8,
@@ -180,12 +182,15 @@ const Parser = struct {
             return .{ .rule = rule };
         } else |err| try filterAcceptError(err);
 
+        if (parser.acceptNode()) |node| {
+            return .{ .node = node };
+        } else |err| try filterAcceptError(err);
+
         // Detect any excess tokens on the top level:
         if (parser.core.nextToken()) |maybe_token| {
             if (maybe_token) |token| {
                 try parser.emitDiagnostic(token.location, .unexpected_toplevel_token, .{
-                    .actual_type = token.type,
-                    .actual_text = token.text,
+                    .actual = token,
                 });
                 return error.SyntaxError;
             } else {
@@ -212,6 +217,29 @@ const Parser = struct {
         try parser.acceptLiteral(.@";", .fail);
 
         return init_rule;
+    }
+
+    fn acceptNode(parser: *Parser) AcceptError!ast.Node {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
+        var state = parser.save();
+        errdefer parser.restore(state);
+
+        try parser.acceptLiteral(.node, .recover);
+
+        const identifier = try parser.acceptIdentifier(.fail);
+
+        try parser.acceptLiteral(.@"=", .fail);
+
+        const value = try parser.acceptTypeSpec();
+
+        try parser.acceptLiteral(.@";", .fail);
+
+        return .{
+            .name = identifier,
+            .value = value,
+        };
     }
 
     fn acceptRule(parser: *Parser) AcceptError!ast.Rule {
@@ -381,7 +409,9 @@ const Parser = struct {
 
         switch (accept_mode) {
             .recover => return error.UnexpectedTokenRecoverable,
-            .fail => return parser.emitUnexpectedToken(),
+            .fail => return parser.emitUnexpectedToken(.{
+                .unexpected_token = .unexpected_token_mapping,
+            }),
         }
     }
 
@@ -612,6 +642,11 @@ const Parser = struct {
         parser.traceEnterRule(@src());
         defer parser.popTrace();
 
+        const list_state = parser.save();
+        errdefer parser.restore(list_state);
+
+        const position = parser.core.tokenizer.current_location;
+
         if (parser.acceptCodeLiteral()) |code| {
             return .{ .literal = code };
         } else |err| try filterAcceptError(err);
@@ -620,11 +655,86 @@ const Parser = struct {
             return .{ .custom = ref };
         } else |err| try filterAcceptError(err);
 
-        if (parser.acceptNodeReference(.fail)) |ref| {
+        if (parser.acceptNodeReference(.recover)) |ref| {
             return .{ .reference = ref };
         } else |err| try filterAcceptError(err);
 
-        @panic("not implemented yet");
+        if (parser.acceptCompoundType(.record)) |record| {
+            return .{ .record = record };
+        } else |err| try filterAcceptError(err);
+
+        if (parser.acceptCompoundType(.variant)) |variant| {
+            return .{ .variant = variant };
+        } else |err| try filterAcceptError(err);
+
+        if (try parser.tryAcceptLiteral(.@";") or try parser.tryAcceptLiteral(.@"|") or try parser.tryAcceptLiteral(.@"=")) {
+            try parser.emitDiagnostic(position, .empty_typespec, .{});
+            return BAD_TYPE_SPEC;
+        }
+
+        // switch (accept_mode) {
+        //     .recover => return error.UnexpectedTokenRecoverable,
+        //     .fail =>
+        return parser.emitUnexpectedToken(.{
+            .unexpected_token = .unexpected_token_type_spec,
+        });
+        // }
+    }
+
+    fn acceptCompoundType(parser: *Parser, comptime designator: TokenType) AcceptError!ast.CompoundType {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
+        const list_state = parser.save();
+        errdefer parser.restore(list_state);
+
+        const current_location = parser.core.tokenizer.current_location;
+
+        // we can recover "struct"/"record", afterwards you must follow the rules
+        try parser.acceptLiteral(designator, .recover);
+
+        var fields = ast.List(ast.Field){};
+
+        while (true) {
+            const field = try parser.acceptField();
+
+            try parser.append(ast.Field, &fields, field);
+
+            if (try parser.tryAcceptLiteral(.@",")) {
+                // Comma means we're having another field
+                continue;
+            } else {
+                // Otherwise, the list is over.
+                break;
+            }
+        }
+
+        return .{
+            .location = current_location,
+            .fields = fields,
+        };
+    }
+
+    fn acceptField(parser: *Parser) AcceptError!ast.Field {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
+        const list_state = parser.save();
+        errdefer parser.restore(list_state);
+
+        const current_location = parser.core.tokenizer.current_location;
+
+        const name = try parser.acceptIdentifier(.fail);
+
+        try parser.acceptLiteral(.@":", .fail);
+
+        const type_spec = try parser.acceptTypeSpec();
+
+        return .{
+            .location = current_location,
+            .name = name,
+            .type = type_spec,
+        };
     }
 
     fn acceptStringLiteral(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.StringLiteral {
@@ -716,8 +826,7 @@ const Parser = struct {
                     .fail => {
                         try parser.emitDiagnostic(location, .unexpected_token, .{
                             .expected_type = token_type,
-                            .actual_type = token.type,
-                            .actual_text = token.text,
+                            .actual = token,
                         });
                         return error.SyntaxError;
                     },
@@ -799,7 +908,14 @@ const Parser = struct {
         try parser.diagnostics.emit(loc orelse parser.core.tokenizer.current_location, code, data);
     }
 
-    fn emitUnexpectedToken(parser: *Parser) AcceptError {
+    const UnexpectedTokenOptions = struct {
+        unexpected_token: Diagnostics.Code = .unexpected_token_no_context,
+    };
+    fn emitUnexpectedToken(parser: *Parser, comptime opt: UnexpectedTokenOptions) AcceptError {
+        if (Diagnostics.Data(opt.unexpected_token) != Diagnostics.Data(.unexpected_token_no_context)) {
+            @compileError("Generic unexpected token must use the same type as 'unexpected_token_no_context' diagnostic.");
+        }
+
         const state = parser.save();
         defer parser.restore(state);
 
@@ -818,8 +934,8 @@ const Parser = struct {
             return error.SyntaxError;
         };
 
-        try parser.emitDiagnostic(location, .unexpected_token_no_context, .{
-            .actual_type = token.type,
+        try parser.emitDiagnostic(location, opt.unexpected_token, .{
+            .actual = token,
         });
         return error.SyntaxError;
     }

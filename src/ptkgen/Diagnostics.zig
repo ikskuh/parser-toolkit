@@ -29,11 +29,14 @@ pub const Code = enum(u16) {
     excess_tokens = 1107,
     unexpected_toplevel_token = 1108,
     unexpected_token_no_context = 1109,
+    unexpected_token_type_spec = 1110,
+    unexpected_token_mapping = 1111,
 
     // recoverable syntax errors:
     illegal_empty_group = 1200,
     empty_mapping = 1201,
     integer_overflow = 1202,
+    empty_typespec = 1203,
 
     comptime {
         std.debug.assert(first_error < first_warning);
@@ -58,6 +61,11 @@ pub const Code = enum(u16) {
 };
 
 const NoDiagnosticData = struct {};
+
+const UnexpectedTokenMessage = struct {
+    actual: parser.Token,
+};
+
 pub fn Data(comptime code: Code) type {
     return switch (code) {
         .out_of_memory => NoDiagnosticData,
@@ -69,16 +77,14 @@ pub fn Data(comptime code: Code) type {
         },
         .unexpected_token => struct {
             expected_type: parser.TokenType,
-            actual_type: parser.TokenType,
-            actual_text: []const u8,
+            actual: parser.Token,
         },
-        .unexpected_toplevel_token => struct {
-            actual_type: parser.TokenType,
-            actual_text: []const u8,
-        },
-        .unexpected_token_no_context => struct {
-            actual_type: parser.TokenType,
-        },
+
+        .unexpected_toplevel_token => UnexpectedTokenMessage,
+        .unexpected_token_no_context => UnexpectedTokenMessage,
+        .unexpected_token_type_spec => UnexpectedTokenMessage,
+        .unexpected_token_mapping => UnexpectedTokenMessage,
+
         .unexpected_eof => NoDiagnosticData,
 
         .invalid_source_encoding => NoDiagnosticData,
@@ -96,6 +102,8 @@ pub fn Data(comptime code: Code) type {
             max: []const u8,
             actual: []const u8,
         },
+
+        .empty_typespec => NoDiagnosticData,
 
         // else => @compileError(std.fmt.comptimePrint("Code {} has no diagnostic type associated!", .{code})),
     };
@@ -173,11 +181,23 @@ fn Formatter(comptime T: type) type {
 
         // enums:
         parser.TokenType => struct {
-            value: T,
+            value: parser.TokenType,
             pub fn format(item: @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
                 _ = options;
                 _ = fmt;
                 try writer.print("{s}", .{@tagName(item.value)});
+            }
+        },
+
+        parser.Token => struct {
+            value: parser.Token,
+            pub fn format(item: @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+                _ = options;
+                _ = fmt;
+                try writer.print("{s} ('{}')", .{
+                    @tagName(item.value.type),
+                    std.zig.fmtEscapes(item.value.text),
+                });
             }
         },
 
