@@ -1,0 +1,2 @@
+# expected: E1113
+rule foo = `illegal here`;

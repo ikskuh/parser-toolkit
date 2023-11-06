@@ -267,9 +267,19 @@ const Parser = struct {
 
             try parser.append(ast.MappedProduction, &list, production);
 
-            // TODO: Improve error reporting here
+            // if a semicolon follows, we're done
             if (try parser.tryAcceptLiteral(.@";")) {
                 break;
+            }
+            // if a pipe follows, we got more rules
+            else if (try parser.tryAcceptLiteral(.@"|")) {
+                continue;
+            }
+            // otherwise, it's a syntax error:
+            else {
+                return parser.emitUnexpectedToken(.{
+                    .unexpected_token = .unexpected_token_production_list,
+                });
             }
 
             try parser.acceptLiteral(.@"|", .fail);
@@ -309,11 +319,28 @@ const Parser = struct {
 
         var list: ast.List(ast.Production) = .{};
 
-        while (true) {
+        sequence_loop: while (true) {
             if (parser.acceptProduction()) |prod| {
                 try parser.append(ast.Production, &list, prod);
             } else |err| switch (err) {
-                error.UnexpectedTokenRecoverable => break,
+                error.UnexpectedTokenRecoverable => {
+                    // we couldn't accept a production, so let's see if we're in a legal state here:
+
+                    const seekahead_reset = parser.save();
+
+                    // all of the following might allow to terminate a list:
+                    inline for (.{ .@")", .@";", .@"=>", .@"|" }) |legal_terminator| {
+                        if (try parser.tryAcceptLiteral(legal_terminator)) {
+                            // All of the above tokens
+                            parser.restore(seekahead_reset);
+                            break :sequence_loop;
+                        }
+                    }
+
+                    return parser.emitUnexpectedToken(.{
+                        .unexpected_token = .unexpected_token_production,
+                    });
+                },
                 error.OutOfMemory, error.InvalidSourceEncoding, error.SyntaxError => |e| return e,
             }
         }
@@ -667,8 +694,14 @@ const Parser = struct {
             return .{ .variant = variant };
         } else |err| try filterAcceptError(err);
 
+        const contiuation_pos = parser.save();
         if (try parser.tryAcceptLiteral(.@";") or try parser.tryAcceptLiteral(.@"|") or try parser.tryAcceptLiteral(.@"=")) {
             try parser.emitDiagnostic(position, .empty_typespec, .{});
+
+            // restore the previous position, we just seeked a bit forward to make better
+            // errors here:
+            parser.restore(contiuation_pos);
+
             return BAD_TYPE_SPEC;
         }
 
@@ -909,7 +942,7 @@ const Parser = struct {
     }
 
     const UnexpectedTokenOptions = struct {
-        unexpected_token: Diagnostics.Code = .unexpected_token_no_context,
+        unexpected_token: Diagnostics.Code,
     };
     fn emitUnexpectedToken(parser: *Parser, comptime opt: UnexpectedTokenOptions) AcceptError {
         if (Diagnostics.Data(opt.unexpected_token) != Diagnostics.Data(.unexpected_token_no_context)) {

@@ -31,6 +31,8 @@ pub const Code = enum(u16) {
     unexpected_token_no_context = 1109,
     unexpected_token_type_spec = 1110,
     unexpected_token_mapping = 1111,
+    unexpected_token_production_list = 1112,
+    unexpected_token_production = 1113,
 
     // recoverable syntax errors:
     illegal_empty_group = 1200,
@@ -84,6 +86,8 @@ pub fn Data(comptime code: Code) type {
         .unexpected_token_no_context => UnexpectedTokenMessage,
         .unexpected_token_type_spec => UnexpectedTokenMessage,
         .unexpected_token_mapping => UnexpectedTokenMessage,
+        .unexpected_token_production_list => UnexpectedTokenMessage,
+        .unexpected_token_production => UnexpectedTokenMessage,
 
         .unexpected_eof => NoDiagnosticData,
 

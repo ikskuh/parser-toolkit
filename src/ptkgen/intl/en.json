@@ -17,8 +17,10 @@
         "unexpected_eof": "Unexpected end of file.",
         "unexpected_toplevel_token": "Expected a top level declaration ('start', 'rule', 'node' or 'token'), but found token {[actual]}",
         "unexpected_token_no_context": "Unexpected token '{[actual]}'.",
-        "unexpected_token_type_spec": "Expected a type specifier, but found token '{[actual]}'.",
-        "unexpected_token_mapping": "Expected an AST mapping, but found token '{[actual]}'."
+        "unexpected_token_type_spec": "Expected a type specifier, but found '{[actual]}'.",
+        "unexpected_token_mapping": "Expected an AST mapping, but found '{[actual]}'.",
+        "unexpected_token_production_list": "Expected ';' or '|', but found '{[actual]}'.",
+        "unexpected_token_production": "Expected a production, but found '{[actual]}'."
     },
     "errors": {
         "Unexpected": "unexpected error encountered",

@@ -200,4 +200,9 @@ const parser_reject_files = [_][]const u8{
     "test/parser/reject/empty-mapping.ptk",
     "test/parser/reject/bad-mapping-invalid-token.ptk",
     "test/parser/reject/bad-mapping-too-long.ptk",
+
+    "test/parser/reject/node-no-type.ptk",
+    "test/parser/reject/rule-no-type.ptk",
+    "test/parser/reject/rule-no-type-no-prod.ptk",
+    "test/parser/reject/rule-bad-prod.ptk",
 };

@@ -1,0 +1,2 @@
+# expected: E1203, E1200
+rule foo : = ;
