@@ -36,5 +36,6 @@ union           # constructs a type for alternatives, here with two variants:
 - `\'` => single quote (0x27)
 - `\"` => double quote (0x22)
 - `\\` => back slash (0x5C)
-- `\u????` => UTF-16
-- `\U????????` => UTF-32
+- `\u{????}` => UTF-8 encoded codepoint
+
+

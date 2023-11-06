@@ -49,7 +49,7 @@ rule mapped_value =
   | $userval                         # @value
 ;
 
-rule struct_ctor = 
+rule record_ctor = 
     "{" <assign_field> ( "," <assign_field> )* "}"
 ;
 

@@ -1022,8 +1022,7 @@ const Parser = struct {
                     '\\' => "\\",
 
                     'x' => @panic("Implement hex escape \\x??"),
-                    'u' => @panic("Implement utf-16 \\u????"),
-                    'U' => @panic("Implement utf-32 \\U????????"),
+                    'u' => @panic("Implement unicode utf-8 escapes \\u{????}"),
 
                     '0'...'3' => @panic("Implement octal escape \\???"),
 
@@ -1350,4 +1349,87 @@ test matchCodeLiteral {
         "``",
         "```hello, world!``",
     });
+}
+
+test "parser string literal" {
+    const Test = struct {
+        pub fn run(expected: []const u8, code: []const u8) !void {
+            var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+            defer arena.deinit();
+
+            var diag = Diagnostics.init(std.testing.allocator);
+            defer diag.deinit();
+
+            var strings = try ptk.strings.Pool.init(std.testing.allocator);
+            defer strings.deinit();
+
+            var tokenizer = Tokenizer.init(code, "unittest");
+
+            var parser = Parser{
+                .diagnostics = &diag,
+                .pool = &strings,
+                .core = ParserCore.init(&tokenizer),
+                .arena = arena.allocator(),
+                .trace_enabled = false,
+            };
+
+            const literal = try parser.acceptStringLiteral(.fail);
+
+            const actual = strings.get(literal.value);
+
+            try std.testing.expectEqualStrings(expected, actual);
+        }
+    };
+
+    // Empty string:
+    try Test.run("",
+        \\""
+    );
+
+    // Regular string
+    try Test.run("hello, world!",
+        \\"hello, world!"
+    );
+
+    // Validate escape sequences:
+    try Test.run("\r",
+        \\"\r"
+    );
+    try Test.run("\n",
+        \\"\n"
+    );
+    try Test.run("\\",
+        \\"\\"
+    );
+    try Test.run("\"",
+        \\"\""
+    );
+    try Test.run("\"hello, world!\"",
+        \\"\"hello, world!\""
+    );
+    try Test.run("A\'B",
+        \\"A\'B"
+    );
+    // TODO: enable those tests for escape sequences!
+    // try Test.run("\x34",
+    //     \\"\x34"
+    // );
+    // try Test.run("A\xFFB",
+    //     \\"A\xFFB"
+    // );
+    // try Test.run("\x10\x22",
+    //     \\"\x10\x22"
+    // );
+    // try Test.run("A\x1BB",
+    //     \\"A\033B"
+    // );
+    // try Test.run("A\xFFB",
+    //     \\"A\377B"
+    // );
+    // try Test.run("A\x01B",
+    //     \\"A\001B"
+    // );
+    // try Test.run("[\u{1F4A9}]",
+    //     \\"[\u{1F4A9}]"
+    // );
 }

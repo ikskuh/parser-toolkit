@@ -12,13 +12,12 @@ pub const Code = enum(u16) {
     pub const first_note = 8000;
     pub const last_item = 10000;
 
-    // generic failures:
+    // generic failures (1000-1099):
     out_of_memory = 1000,
     file_limit_exceeded = 1001,
     io_error = 1002,
 
-    // non-recoverable syntax errors:
-
+    // non-recoverable syntax errors (1100-1199):
     invalid_source_encoding = 1100,
     unexpected_token_eof = 1101,
     unexpected_token = 1102,
@@ -34,7 +33,7 @@ pub const Code = enum(u16) {
     unexpected_token_production_list = 1112,
     unexpected_token_production = 1113,
 
-    // recoverable syntax errors:
+    // recoverable syntax errors (1200-1299):
     illegal_empty_group = 1200,
     empty_mapping = 1201,
     integer_overflow = 1202,
