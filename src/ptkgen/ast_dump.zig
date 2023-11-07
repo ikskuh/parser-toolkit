@@ -22,7 +22,7 @@ const AstPrinter = struct {
 
         var iter = ast.iterate(decls);
         while (iter.next()) |decl| {
-            switch (decl) {
+            switch (decl.*) {
                 .start => |item| print("start <{}>;\n", .{printer.fmtId(item.identifier)}),
 
                 .rule => |rule| {
@@ -44,7 +44,7 @@ const AstPrinter = struct {
                         } else {
                             print("    ", .{});
                         }
-                        printer.dumpMappedProd(prod);
+                        printer.dumpMappedProd(prod.*);
                     }
 
                     print("\n;\n", .{});
@@ -56,8 +56,8 @@ const AstPrinter = struct {
                     print(";\n", .{});
                 },
 
-                .token => |token| {
-                    print("token {s}", .{printer.fmtId(token.name.value)});
+                .pattern => |pattern| {
+                    print("pattern {s}", .{printer.fmtId(pattern.name.value)});
                     print(";\n", .{});
                 },
             }
@@ -117,7 +117,7 @@ const AstPrinter = struct {
                 var iter = ast.iterate(seq);
                 while (iter.next()) |item| {
                     print(" ", .{});
-                    printer.dumpProd(item);
+                    printer.dumpProd(item.*);
                 }
 
                 print(" )", .{});
@@ -199,7 +199,7 @@ const AstPrinter = struct {
             }
             first = false;
 
-            printer.dumpMapping(arg);
+            printer.dumpMapping(arg.*);
         }
     }
 

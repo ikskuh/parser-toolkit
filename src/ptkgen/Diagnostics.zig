@@ -10,7 +10,7 @@ pub const Code = enum(u16) {
     pub const first_error = 1000;
     pub const first_warning = 4000;
     pub const first_note = 8000;
-    pub const last_item = 10000;
+    pub const last_item = 9999;
 
     // generic failures (1000-1099):
     out_of_memory = 1000,
@@ -39,11 +39,55 @@ pub const Code = enum(u16) {
     integer_overflow = 1202,
     empty_typespec = 1203,
 
+    // semantic errors (1300-1399):
+
+    duplicate_identifier_rule = 1300,
+    duplicate_identifier_node = 1301,
+    duplicate_identifier_pattern = 1302,
+
+    reference_to_undeclared_rule = 1303,
+    reference_to_undeclared_node = 1304,
+    reference_to_undeclared_pattern = 1305,
+
+    multiple_start_symbols = 1306,
+
+    // semantic warnings (4000-4099):
+
+    missing_start_symbol = 4000,
+
     comptime {
         std.debug.assert(first_error < first_warning);
         std.debug.assert(first_warning < first_note);
         std.debug.assert(first_note < last_item);
     }
+
+    const max_item_len = blk: {
+        var len = 0;
+        for (@typeInfo(Code).Enum.fields) |fld| {
+            len = @max(len, fld.name);
+        }
+        break :blk len;
+    };
+
+    const code_strings = blk: {
+        @setEvalBranchQuota(10_000);
+        var map = std.EnumArray(Code, []const u8).initUndefined();
+
+        for (std.enums.values(Code)) |code| {
+            const tag = @tagName(code);
+
+            // perform kebab conversion:
+            var buf: [tag.len]u8 = tag[0..tag.len].*;
+            for (&buf) |*c| {
+                if (c.* == '_')
+                    c.* = '-';
+            }
+
+            map.set(code, &buf);
+        }
+
+        break :blk map;
+    };
 
     pub fn isError(code: Code) bool {
         const int = @intFromEnum(code);
@@ -59,12 +103,59 @@ pub const Code = enum(u16) {
         const int = @intFromEnum(code);
         return int >= first_note and int < last_item;
     }
+
+    pub fn parse(string: []const u8) error{
+        /// Format is not recognized
+        InvalidFormat,
+        /// Numeric error code is out of range.
+        OutOfRange,
+        /// Numeric error code does not exist.
+        InvalidId,
+    }!Code {
+        if (string.len == 0 or (string[0] != 'E' and string[0] != 'W' and string[0] != 'D'))
+            return error.InvalidFormat;
+        const id = std.fmt.parseInt(u16, string[1..], 10) catch |err| switch (err) {
+            error.InvalidCharacter => return error.InvalidFormat,
+            error.Overflow => return error.OutOfRange,
+        };
+        if (id > last_item)
+            return error.OutOfRange;
+        return std.meta.intToEnum(Diagnostics.Code, id) catch return error.InvalidId;
+    }
+
+    pub fn format(code: Code, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = opt;
+
+        if (comptime std.mem.eql(u8, fmt, "d")) {
+            const code_prefix = if (code.isError())
+                "E"
+            else if (code.isWarning())
+                "W"
+            else
+                "D";
+
+            try writer.print("{s}{d:0>4}", .{ code_prefix, @intFromEnum(code) });
+        } else if (comptime std.mem.eql(u8, fmt, "s")) {
+            try writer.writeAll(code_strings.get(code));
+        } else {
+            @compileError("Code fmt must be {s} (string variant) or {d} (numeric variant)!");
+        }
+        //
+    }
 };
 
 const NoDiagnosticData = struct {};
 
 const UnexpectedTokenMessage = struct {
     actual: parser.Token,
+};
+
+const DuplicateIdentifier = struct {
+    identifier: []const u8,
+    previous_location: ptk.Location,
+};
+const UndeclaredIdentifier = struct {
+    identifier: []const u8
 };
 
 pub fn Data(comptime code: Code) type {
@@ -107,6 +198,21 @@ pub fn Data(comptime code: Code) type {
         },
 
         .empty_typespec => NoDiagnosticData,
+
+        .duplicate_identifier_rule => DuplicateIdentifier,
+        .duplicate_identifier_node => DuplicateIdentifier,
+        .duplicate_identifier_pattern => DuplicateIdentifier,
+
+        .reference_to_undeclared_rule => UndeclaredIdentifier,
+        .reference_to_undeclared_node => UndeclaredIdentifier,
+        .reference_to_undeclared_pattern => UndeclaredIdentifier,
+
+        .multiple_start_symbols => struct {
+            identifier: []const u8,
+            previous_location: ptk.Location,
+        },
+
+        .missing_start_symbol => NoDiagnosticData,
 
         // else => @compileError(std.fmt.comptimePrint("Code {} has no diagnostic type associated!", .{code})),
     };
@@ -204,6 +310,15 @@ fn Formatter(comptime T: type) type {
             }
         },
 
+        ptk.Location => struct {
+            value: ptk.Location,
+            pub fn format(item: @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+                _ = options;
+                _ = fmt;
+                try writer.print("{}", .{item.value});
+            }
+        },
+
         intl.FormattableError => struct {
             value: T,
 
@@ -284,13 +399,7 @@ pub fn emit(diag: *Diagnostics, location: ptk.Location, comptime code: Code, par
     const message_text = try std.fmt.allocPrint(stack_fallback_allocator, fmt_string, formatted_params);
     defer stack_fallback_allocator.free(message_text);
 
-    const code_prefix = switch (level) {
-        .@"error" => "E",
-        .warning => "W",
-        .info => "D",
-    };
-
-    try diag.inner.emit(location, level, "{s}{d:0>4}: {s}", .{ code_prefix, @intFromEnum(code), message_text });
+    try diag.inner.emit(location, level, "{d}: {s}", .{ code, message_text });
     try diag.codes.append(code);
 }
 

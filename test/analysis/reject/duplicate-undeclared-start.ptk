@@ -1,0 +1,8 @@
+# expected: E1303, E1306
+
+start <magic>;
+
+rule magic = "magic";
+
+start <no_disco>;
+

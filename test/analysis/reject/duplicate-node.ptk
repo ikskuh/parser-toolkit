@@ -1,0 +1,3 @@
+# expected: E1301
+node foo = `bool`;
+node foo = `bool`;

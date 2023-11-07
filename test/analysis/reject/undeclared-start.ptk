@@ -1,0 +1,2 @@
+# expected: E1303, W4000
+start <undeclared>;

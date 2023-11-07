@@ -5,14 +5,14 @@ rule document = ( <top_level> )* ;
 
 rule top_level =
       <start_decl>
-    | <token_decl>
+    | <pattern_decl>
     | <node_decl>
     | <rule_decl>
 ;
 
 rule start_decl = "start" $rule_ref ";" ;
 
-rule token_decl = "token" $identifier "="     ";" ;
+rule pattern_decl = "pattern" $identifier "="     ";" ;
 
 rule node_decl = "node" $identifier "="     ";" ;
 

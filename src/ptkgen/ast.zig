@@ -32,10 +32,10 @@ pub fn Iterator(comptime T: type) type {
     return struct {
         node: ?*List(T).Node,
 
-        pub fn next(iter: *@This()) ?T {
+        pub fn next(iter: *@This()) ?*T {
             const current = iter.node orelse return null;
             iter.node = current.next;
-            return current.data;
+            return &current.data;
         }
     };
 }
@@ -73,12 +73,13 @@ pub const TopLevelDeclaration = union(enum) {
     start: RuleRef,
     rule: Rule,
     node: Node,
-    token: Token,
+    pattern: Pattern,
 };
 
 pub const NodeRef = Reference(Node); // !mynode
 pub const RuleRef = Reference(Rule); // <myrule>
-pub const TokenRef = Reference(Token); // $mytoken
+pub const PatternRef = Reference(Pattern); // $mytoken
+
 pub const ValueRef = struct { // $0
     location: Location,
     index: u32,
@@ -95,9 +96,16 @@ pub const Rule = struct { // rule <name> ( : <type> )? = ...;
     productions: List(MappedProduction), // all alternatives of the rule
 };
 
-pub const Token = struct { // token <name> = ...;
+pub const Pattern = struct { // token <name> = ...;
     name: Identifier,
-    pattern: Pattern,
+    pattern: Data,
+
+    pub const Data = union(enum) {
+        literal: StringLiteral, // literal "+"
+        word: StringLiteral, // word "while"
+        regex: StringLiteral, // regex "string"
+        external: CodeLiteral, // custom `matchMe`
+    };
 };
 
 pub const MappedProduction = struct { // ... => value
@@ -107,7 +115,7 @@ pub const MappedProduction = struct { // ... => value
 
 pub const Production = union(enum) {
     literal: StringLiteral, // "text"
-    terminal: TokenRef, // $token
+    terminal: PatternRef, // $token
     recursion: RuleRef, // <rule>
     sequence: List(Production), // ...
     optional: List(Production), // ( ... )?
@@ -143,13 +151,6 @@ pub const FieldAssignment = struct {
     location: Location,
     field: Identifier,
     value: *AstMapping,
-};
-
-pub const Pattern = union(enum) {
-    literal: StringLiteral, // literal "+"
-    word: StringLiteral, // word "while"
-    regex: StringLiteral, // regex "string"
-    external: CodeLiteral, // custom `matchMe`
 };
 
 pub const TypeSpec = union(enum) {

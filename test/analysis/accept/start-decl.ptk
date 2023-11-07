@@ -1,0 +1,7 @@
+
+
+
+start <magic>;
+
+rule magic = "magic";
+

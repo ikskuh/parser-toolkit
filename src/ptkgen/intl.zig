@@ -57,6 +57,9 @@ pub const Localization = struct {
     errors: struct {
         Unexpected: []const u8,
 
+        SyntaxError: []const u8,
+        SemanticError: []const u8,
+
         OutOfMemory: []const u8,
 
         InputOutput: []const u8,
@@ -72,7 +75,6 @@ pub const Localization = struct {
         NetNameDeleted: []const u8,
 
         FileTooBig: []const u8,
-        SyntaxError: []const u8,
         InvalidSourceEncoding: []const u8,
     },
 

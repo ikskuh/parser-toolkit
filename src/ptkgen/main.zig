@@ -7,6 +7,7 @@ const args_parser = @import("args");
 const ptk = @import("parser-toolkit");
 
 const ast = @import("ast.zig");
+const sema = @import("sema.zig");
 const intl = @import("intl.zig");
 const parser = @import("parser.zig");
 const ast_dump = @import("ast_dump.zig");
@@ -52,6 +53,7 @@ pub const CliOptions = struct {
 const TestMode = enum {
     none,
     parse_only,
+    no_codegen,
 };
 
 const AppError = error{OutOfMemory} || std.fs.File.WriteError;
@@ -126,10 +128,10 @@ pub fn main() AppError!u8 {
                 if (std.mem.startsWith(u8, line, prefix)) {
                     var items = std.mem.tokenize(u8, line[prefix.len..], " \t,");
                     while (items.next()) |error_code| {
-                        if (error_code.len == 0 or (error_code[0] != 'E' and error_code[0] != 'W' and error_code[0] != 'D'))
-                            @panic("invalid error code!");
-                        const id = std.fmt.parseInt(u16, error_code[1..], 10) catch @panic("bad integer");
-                        const code = std.meta.intToEnum(Diagnostics.Code, id) catch @panic("bad diagnostic code");
+                        const code = Diagnostics.Code.parse(
+                            error_code,
+                        ) catch @panic("invalid error code!");
+
                         try expectations.append(.{ .code = code });
                     }
                 }
@@ -142,8 +144,7 @@ pub fn main() AppError!u8 {
             &string_pool,
             source_code,
             file_name,
-            cli.options.test_mode,
-            cli.options.trace,
+            cli.options,
         ) catch |err| {
             try convertErrorToDiagnostics(&diagnostics, file_name, err);
             break :process_file false;
@@ -176,7 +177,7 @@ pub fn main() AppError!u8 {
 fn convertErrorToDiagnostics(diagnostics: *Diagnostics, file_name: []const u8, err: intl.FormattableError) error{OutOfMemory}!void {
     switch (err) {
         // syntax errors must produce diagnostics:
-        error.SyntaxError, error.InvalidSourceEncoding => std.debug.assert(diagnostics.hasErrors()),
+        error.SyntaxError, error.SemanticError, error.InvalidSourceEncoding => std.debug.assert(diagnostics.hasErrors()),
 
         error.OutOfMemory => {
             try diagnostics.emit(.{
@@ -250,13 +251,26 @@ fn validateDiagnostics(allocator: std.mem.Allocator, diagnostics: Diagnostics, e
         }
     }
 
+    // Remove all non-errors from available, we do match on them with "-W4000" instead of forcing a expected W4000 into all files without start rules (or similar)
+    {
+        var i: usize = 0;
+        while (i < available.items.len) {
+            const code = available.items[i];
+            if (!code.isError()) {
+                _ = available.swapRemove(i);
+            } else {
+                i += 1;
+            }
+        }
+    }
+
     const ok = (available.items.len == 0) and (expected.items.len == 0);
 
     for (available.items) |code| {
-        std.log.err("unexpected diagnostic: {0}", .{code});
+        std.log.err("unexpected diagnostic: {s} ({d})", .{ code, code });
     }
     for (expected.items) |code| {
-        std.log.err("unmatched diagnostic:  {0}", .{code});
+        std.log.err("unmatched diagnostic:  {s} ({d})", .{ code, code });
     }
 
     if (!ok)
@@ -269,8 +283,7 @@ fn compileFile(
     string_pool: *ptk.strings.Pool,
     source_code: []const u8,
     file_name: []const u8,
-    mode: TestMode,
-    trace_enabled: bool,
+    options: CliOptions,
 ) !void {
     var tree = try parser.parse(
         .{
@@ -279,16 +292,26 @@ fn compileFile(
             .string_pool = string_pool,
             .file_name = file_name,
             .source_code = source_code,
-            .trace_enabled = trace_enabled,
+            .trace_enabled = options.trace,
         },
     );
     defer tree.deinit();
 
-    // TODO: Implement sema
+    if (options.test_mode == .parse_only) {
+        return;
+    }
+
+    var grammar = try sema.analyze(
+        allocator,
+        diagnostics,
+        string_pool,
+        tree.top_level_declarations,
+    );
+    defer grammar.deinit();
 
     // TODO: Implement parsergen / tablegen / highlightergen
 
-    if (mode == .none) {
+    if (options.test_mode == .none) {
         ast_dump.dump(string_pool, tree);
     }
 }

@@ -20,9 +20,19 @@
         "unexpected_token_type_spec": "Expected a type specifier, but found '{[actual]}'.",
         "unexpected_token_mapping": "Expected an AST mapping, but found '{[actual]}'.",
         "unexpected_token_production_list": "Expected ';' or '|', but found '{[actual]}'.",
-        "unexpected_token_production": "Expected a production, but found '{[actual]}'."
+        "unexpected_token_production": "Expected a production, but found '{[actual]}'.",
+        "duplicate_identifier_rule": "Rule {[identifier]} already defined here: {[previous_location]}",
+        "duplicate_identifier_node": "Node {[identifier]} already defined here: {[previous_location]}",
+        "duplicate_identifier_pattern": "Pattern {[identifier]} already defined here: {[previous_location]}",
+        "reference_to_undeclared_rule": "Reference to undeclared rule {[identifier]}.",
+        "reference_to_undeclared_node": "Reference to undeclared node {[identifier]}.",
+        "reference_to_undeclared_pattern": "Reference to undeclared pattern {[identifier]}.",
+        "missing_start_symbol": "Grammar file has no start symbol declared.",
+        "multiple_start_symbols": "Another start rule ({[identifier]}) was already declared here: {[previous_location]}"
     },
     "errors": {
+        "SyntaxError": "syntax error",
+        "SemanticError": "semantic error",
         "Unexpected": "unexpected error encountered",
         "OutOfMemory": "out of memory",
         "InputOutput": "input output",
@@ -37,7 +47,6 @@
         "NotOpenForReading": "not open for reading",
         "NetNameDeleted": "net name deleted",
         "FileTooBig": "Input file exceeds resources",
-        "SyntaxError": "syntax error",
         "InvalidSourceEncoding": "invalid source encoding"
     }
 }

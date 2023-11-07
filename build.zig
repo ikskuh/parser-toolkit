@@ -68,16 +68,17 @@ pub fn build(b: *std.build.Builder) void {
         test_step.dependOn(&b.addRunArtifact(ptkgen_tests).step);
 
         // Integration tests for ptkgen:
-        for (parser_ok_files) |file| {
+        for (parser_accept_files ++ parser_reject_files) |file| {
             const run = b.addRunArtifact(ptkdef_exe);
             run.addArg("--test_mode=parse_only");
             run.addFileArg(.{ .path = file });
             test_step.dependOn(&run.step);
         }
 
-        for (parser_reject_files) |file| {
+        // Integration tests for ptkgen:
+        for (analyis_accept_files ++ analyis_reject_files) |file| {
             const run = b.addRunArtifact(ptkdef_exe);
-            run.addArg("--test_mode=parse_only");
+            run.addArg("--test_mode=no_codegen");
             run.addFileArg(.{ .path = file });
             test_step.dependOn(&run.step);
         }
@@ -99,9 +100,10 @@ pub fn build(b: *std.build.Builder) void {
 
 const example_files = [_][]const u8{
     "/home/felix/projects/parser-toolkit/examples/ptkgen/grammar.ptk",
+    "examples/ptkgen/ast-with-unions.ptk",
 };
 
-const analyis_ok_files = [_][]const u8{
+const analyis_accept_files = [_][]const u8{
     "test/analysis/accept/match-literal-rule.ptk",
     "test/analysis/accept/match-literal-sequence.ptk",
     "test/analysis/accept/match-literal-variants.ptk",
@@ -127,10 +129,22 @@ const analyis_ok_files = [_][]const u8{
     "test/analysis/accept/match-rep_one-many-sequence.ptk",
     "test/analysis/accept/match-rep_one-nested.ptk",
 
-    "examples/ptkgen/ast-with-unions.ptk",
+    "test/analysis/accept/start-decl.ptk",
 } ++ example_files;
 
-const parser_ok_files = [_][]const u8{
+const analyis_reject_files = [_][]const u8{
+    "test/analysis/reject/duplicate-node.ptk",
+    // "test/analysis/reject/duplicate-pattern.ptk", // TODO: Implement pattern support in parser
+    "test/analysis/reject/duplicate-rule.ptk",
+
+    "test/analysis/accept/expect-warn-missing-start.ptk",
+
+    "test/analysis/reject/undeclared-start.ptk",
+    "test/analysis/reject/duplicate-undeclared-start.ptk",
+    "test/analysis/reject/duplicate-start.ptk",
+};
+
+const parser_accept_files = [_][]const u8{
     "test/parser/accept/empty.ptk",
     "test/parser/accept/empty-with-comment-linefeed.ptk",
     "test/parser/accept/empty-with-comment.ptk",
@@ -186,7 +200,7 @@ const parser_ok_files = [_][]const u8{
 
     "test/parser/accept/node-variant-f4.ptk",
     "test/parser/accept/node-variant-f1.ptk",
-} ++ analyis_ok_files;
+} ++ analyis_accept_files;
 
 const parser_reject_files = [_][]const u8{
     "test/parser/reject/empty-rule.ptk",

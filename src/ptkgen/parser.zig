@@ -85,13 +85,14 @@ pub fn parse(opt: struct {
 pub const TokenType = enum {
     // keywords
 
+    start,
     node,
+    rule,
+    pattern,
+
     record,
     variant,
     optional,
-    start,
-    rule,
-    token,
 
     custom,
     regex,
@@ -808,13 +809,13 @@ const Parser = struct {
         };
     }
 
-    fn acceptTokenReference(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.TokenRef {
+    fn acceptTokenReference(parser: *Parser, accept_mode: AcceptMode) AcceptError!ast.PatternRef {
         parser.traceEnterRule(@src());
         defer parser.popTrace();
 
         const token = try parser.acceptToken(.token_ref, accept_mode);
         std.debug.assert(std.mem.startsWith(u8, token.text, "$"));
-        return ast.TokenRef{
+        return ast.PatternRef{
             .location = token.location,
             .identifier = try parser.unwrapIdentifierString(token.location, token.text[1..]),
         };
@@ -1101,7 +1102,7 @@ const Tokenizer = ptk.Tokenizer(TokenType, &.{
     Pattern.create(.optional, match.word("optional")),
     Pattern.create(.start, match.word("start")),
     Pattern.create(.rule, match.word("rule")),
-    Pattern.create(.token, match.word("token")),
+    Pattern.create(.pattern, match.word("pattern")),
     Pattern.create(.custom, match.word("custom")),
     Pattern.create(.regex, match.word("regex")),
     Pattern.create(.skip, match.word("skip")),

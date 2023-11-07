@@ -1,0 +1,10 @@
+# expected: E1306
+
+start <magic>;
+
+rule magic = "magic";
+
+rule disco = "disco";
+
+start <disco>;
+
