@@ -1,0 +1,4 @@
+rule mode = 
+    "basic" "item"
+  | "extended" "item"
+;

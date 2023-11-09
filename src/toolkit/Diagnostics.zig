@@ -38,8 +38,15 @@ pub fn emit(self: *Self, location: Location, level: Error.Level, comptime fmt: [
     const str = try std.fmt.allocPrintZ(allocator, fmt, args);
     errdefer allocator.free(str);
 
+    var cloned_location = location;
+    if (location.source) |source| {
+        cloned_location.source = try allocator.dupe(u8, source);
+    }
+    errdefer if (cloned_location.source) |source|
+        allocator.free(source);
+
     try self.errors.append(allocator, Error{
-        .location = location,
+        .location = cloned_location,
         .level = level,
         .message = str,
     });

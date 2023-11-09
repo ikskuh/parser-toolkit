@@ -1,0 +1,8 @@
+
+rule a                  = "whatever";
+rule _                  = "whatever";
+rule a0                 = "whatever";
+rule a-z                = "whatever";
+rule _10                = "whatever";
+rule @"x"               = "whatever";
+rule @"hello, world!"   = "whatever";

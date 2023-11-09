@@ -1,0 +1,1 @@
+rule basic = "basic" "words" "after" "another";

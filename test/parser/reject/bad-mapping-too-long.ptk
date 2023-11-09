@@ -1,0 +1,2 @@
+# expected: E1112
+rule group = "value" => $0 whatever ;

@@ -1,0 +1,64 @@
+
+start <document>;
+
+rule document = ( <top_level> )* ;
+
+rule top_level =
+      <start_decl>
+    | <token_decl>
+    | <node_decl>
+    | <rule_decl>
+;
+
+rule start_decl = "start" $rule_ref ";" ;
+
+rule token_decl = "token" $identifier "="     ";" ;
+
+rule node_decl = "node" $identifier "="     ";" ;
+
+rule rule_decl = "rule" $identifier ( ":" <type> )? "=" <mapped_productions> ";" ;
+
+rule mapped_productions = <mapped_production> ( "|" <mapped_production> )* ;
+
+rule mapped_production = <production_sequence> ( "=>" <mapping> )? ;
+
+rule production_sequence = ( <production> )+;
+
+rule production =
+    $string_literal
+  | $rule_ref
+  | $token_ref
+  | "(" <production_sequence> ")" "?"
+  | "(" <production_sequence> ")" "*"
+  | "(" <production_sequence> ")" "+"
+  | "(" <production_sequence> ")"
+;
+
+rule mapping = 
+    $identifier ":" <mapped_value> # variant init
+  | <mapped_value>                 # regular init
+;
+
+rule mapped_value =
+    <record_ctor>                    # { field = <value>, field = <value>, ... }
+  | <list_ctor>                      # { <value>, <value>, ... }
+  | $code_literal                    # `code`
+  | $value_ref                       # $0
+  | $identifier "(" <value_list> ")" # builtin(...)
+  | $userval    "(" <value_list> ")" # @func(...)
+  | $userval                         # @value
+;
+
+rule struct_ctor = 
+    "{" <assign_field> ( "," <assign_field> )* "}"
+;
+
+rule assign_field = 
+    $identifier "=" $mapped_value
+;
+
+rule list_ctor = "{" ( <value_list> )? "}";
+
+rule value_list =
+    <mapped_value> ( "," <mapped_value> )*
+;

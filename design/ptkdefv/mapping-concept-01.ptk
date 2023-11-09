@@ -1,0 +1,37 @@
+
+# "!id" is a type reference 
+# "$id" is a token reference 
+# "<id>" is a rule reference 
+
+# maps type "array" to a slice/arraylist of whatever "int" is 
+node array = sequence !int;
+
+# "int" is the Zig type "i32"
+node int = literal "i32"; 
+
+# the initial rule is "list", also determines the root type of the ast
+start <list>;
+
+# "decimal" token is a decimal number sequence token
+token decimal = regex "\d+";
+
+# "list" is a sequence of decimals with comma separated, potential trailing comma,
+# enclosed by square brackets
+rule list = "[" [ $decimal "," ] $decimal? "]";
+#           $0  $1______________ $2_______ $3
+
+# the rule "list" is mapped to the type "array"
+# as a sequence of the second element (unwrapped into items) and
+# the third item appended. square brackets in a map are the "construct array operator".
+# if the array is not sequence of optionals, optional items are skipped in construction
+map <list> !array = [ $1..., $2 ];
+
+# the "decimal" token is mapped to i32 by invoking a Zig function called
+# "parse" that takes the token as input and returns "i32":
+map $decimal !int = @parse($0);
+
+
+
+
+
+

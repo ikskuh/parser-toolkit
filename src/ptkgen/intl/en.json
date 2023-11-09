@@ -1,0 +1,43 @@
+{
+    "diagnostics": {
+        "out_of_memory": "Out of memory",
+        "file_limit_exceeded": "Input file exceeds maximum file size",
+        "io_error": "I/O error: {[error_code]}",
+        "invalid_source_encoding": "Invalid source code encoding detected",
+        "bad_string_escape": "Invalid string escape: Escape sequence at the end of string.",
+        "invalid_string_escape": "Invalid string escape '\\{[escape]}'.",
+        "excess_tokens": "Excess token at the end of the file: {[token_type]}-",
+        "illegal_empty_group": "Production sequence may not be empty.",
+        "integer_overflow": "Integer value {[actual]} out of range. Values must be between {[min]} and {[max]}.",
+        "empty_mapping": "Empty mappings are not allowed.",
+        "empty_typespec": "A type specifier is missing.",
+        "unexpected_token_eof": "Expected a token of type '{[expected_type]}', but the end of file was discovered.",
+        "unexpected_token": "Expected a token of type '{[expected_type]}', but found token {[actual]}.",
+        "unexpected_character": "Unexpected character '{[character]}' found.",
+        "unexpected_eof": "Unexpected end of file.",
+        "unexpected_toplevel_token": "Expected a top level declaration ('start', 'rule', 'node' or 'token'), but found token {[actual]}",
+        "unexpected_token_no_context": "Unexpected token '{[actual]}'.",
+        "unexpected_token_type_spec": "Expected a type specifier, but found '{[actual]}'.",
+        "unexpected_token_mapping": "Expected an AST mapping, but found '{[actual]}'.",
+        "unexpected_token_production_list": "Expected ';' or '|', but found '{[actual]}'.",
+        "unexpected_token_production": "Expected a production, but found '{[actual]}'."
+    },
+    "errors": {
+        "Unexpected": "unexpected error encountered",
+        "OutOfMemory": "out of memory",
+        "InputOutput": "input output",
+        "AccessDenied": "access denied",
+        "BrokenPipe": "broken pipe",
+        "SystemResources": "system resources",
+        "OperationAborted": "operation aborted",
+        "WouldBlock": "would block",
+        "ConnectionResetByPeer": "connection reset by peer",
+        "IsDir": "path points to directory",
+        "ConnectionTimedOut": "connection timed out",
+        "NotOpenForReading": "not open for reading",
+        "NetNameDeleted": "net name deleted",
+        "FileTooBig": "Input file exceeds resources",
+        "SyntaxError": "syntax error",
+        "InvalidSourceEncoding": "invalid source encoding"
+    }
+}

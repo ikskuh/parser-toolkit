@@ -1,0 +1,6 @@
+node Struct = variant
+    x: `i32`,
+    y: `i32`,
+    z: `i32`,
+    location: !Location
+;

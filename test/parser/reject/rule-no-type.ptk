@@ -1,0 +1,2 @@
+# expected: E1203
+rule foo : = "code";

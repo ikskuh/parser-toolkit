@@ -1,0 +1,62 @@
+# parse a construct like this into a single type:
+# var   name       = value;
+# const name       = value;
+# var   name: type = value;
+# const name: type = value;
+
+node declaration = record
+    is_const: `bool`,
+    name: !identifier,
+    # type: optional !type,
+    value: !value
+;
+
+node identifier = `[]const u8`;
+node type = @TypeId; # enum { int, float, string }
+node value = @Value;
+
+start <decl>;
+
+rule decl : !declaration = 
+    <decl-type> <id> ( ":" <type> )? "=" <value> => {
+        is_const = $0,
+        name = $1,
+        type = $2,
+        value = $4
+    }
+#   $0_________ $1__ $2_____________ $3  $4_____
+;
+
+rule decl-type : `bool` = 
+      "var"   => `false`
+    | "const" => `true`
+;
+
+rule id : !identifier = "name" => tostring($0);
+
+rule type : !type = 
+      "int"    => `.int`
+    | "float"  => `.float`
+    | "string" => `.string`
+;
+
+rule value : !value = 
+      "10"       => @parseInt($0)
+    | "3.14"     => @parseFloat($0)
+    | "\"nice\"" => @parseStringLiteral($0)
+;
+
+
+
+# Unions have can only have a single option active at a time
+node TLDeclaration = variant 
+    ns        : !namespace,
+    interface : !interface,
+    module    : !module
+;
+
+rule toplevel-decl : !TLDeclaration = 
+      <namespace-group> => ns: $0 # this is syntax for a union field selector as unions are not compounds
+    | <interface-decl>  => interface: $0
+    | <module-decl>     => module: $0
+;
