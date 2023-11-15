@@ -94,7 +94,8 @@ pub const TokenType = enum {
     variant,
     optional,
 
-    custom,
+    literal,
+    word,
     regex,
     skip,
 
@@ -187,6 +188,10 @@ const Parser = struct {
             return .{ .node = node };
         } else |err| try filterAcceptError(err);
 
+        if (parser.acceptPatternDefinition()) |pattern| {
+            return .{ .pattern = pattern };
+        } else |err| try filterAcceptError(err);
+
         // Detect any excess tokens on the top level:
         if (parser.core.nextToken()) |maybe_token| {
             if (maybe_token) |token| {
@@ -218,6 +223,59 @@ const Parser = struct {
         try parser.acceptLiteral(.@";", .fail);
 
         return init_rule;
+    }
+
+    fn acceptPatternDefinition(parser: *Parser) AcceptError!ast.Pattern {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
+        try parser.acceptLiteral(.pattern, .recover);
+
+        const name = try parser.acceptIdentifier(.fail);
+        try parser.acceptLiteral(.@"=", .fail);
+
+        const data = try parser.acceptPatternSpec();
+
+        const invisible = try parser.tryAcceptLiteral(.skip);
+
+        try parser.acceptLiteral(.@";", .fail);
+
+        return .{
+            .name = name,
+            .data = data,
+            .invisible = invisible,
+        };
+    }
+
+    fn acceptPatternSpec(parser: *Parser) AcceptError!ast.Pattern.Data {
+        parser.traceEnterRule(@src());
+        defer parser.popTrace();
+
+        var state = parser.save();
+        errdefer parser.restore(state);
+
+        if (try parser.tryAcceptLiteral(.literal)) {
+            const string = try parser.acceptStringLiteral(.fail);
+            return .{ .literal = string };
+        }
+
+        if (try parser.tryAcceptLiteral(.word)) {
+            const string = try parser.acceptStringLiteral(.fail);
+            return .{ .word = string };
+        }
+
+        if (try parser.tryAcceptLiteral(.regex)) {
+            const string = try parser.acceptStringLiteral(.fail);
+            return .{ .regex = string };
+        }
+
+        if (parser.acceptUserReference()) |ref| {
+            return .{ .external = ref };
+        } else |err| try filterAcceptError(err);
+
+        return parser.emitUnexpectedToken(.{
+            .unexpected_token = .unexpected_token_pattern,
+        });
     }
 
     fn acceptNode(parser: *Parser) AcceptError!ast.Node {
@@ -1103,7 +1161,8 @@ const Tokenizer = ptk.Tokenizer(TokenType, &.{
     Pattern.create(.start, match.word("start")),
     Pattern.create(.rule, match.word("rule")),
     Pattern.create(.pattern, match.word("pattern")),
-    Pattern.create(.custom, match.word("custom")),
+    Pattern.create(.literal, match.word("literal")),
+    Pattern.create(.word, match.word("word")),
     Pattern.create(.regex, match.word("regex")),
     Pattern.create(.skip, match.word("skip")),
 

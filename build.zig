@@ -130,6 +130,16 @@ const analyis_accept_files = [_][]const u8{
     "test/analysis/accept/match-rep_one-nested.ptk",
 
     "test/analysis/accept/start-decl.ptk",
+
+    "test/analysis/accept/pattern-custom.ptk",
+    "test/analysis/accept/pattern-literal.ptk",
+    "test/analysis/accept/pattern-regex.ptk",
+    "test/analysis/accept/pattern-word.ptk",
+
+    "test/analysis/accept/pattern-word-skip.ptk",
+    "test/analysis/accept/pattern-regex-skip.ptk",
+    "test/analysis/accept/pattern-literal-skip.ptk",
+    "test/analysis/accept/pattern-custom-skip.ptk",
 } ++ example_files;
 
 const analyis_reject_files = [_][]const u8{
@@ -219,4 +229,6 @@ const parser_reject_files = [_][]const u8{
     "test/parser/reject/rule-no-type.ptk",
     "test/parser/reject/rule-no-type-no-prod.ptk",
     "test/parser/reject/rule-bad-prod.ptk",
+
+    "test/parser/reject/pattern-unexpected-token.ptk",
 };

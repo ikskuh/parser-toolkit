@@ -12,7 +12,14 @@ rule top_level =
 
 rule start_decl = "start" $rule_ref ";" ;
 
-rule pattern_decl = "pattern" $identifier "="     ";" ;
+rule pattern_decl = "pattern" $identifier "=" <pattern_spec> ( "skip" )? ";" ;
+
+rule pattern_spec =
+    "literal" $string_literal
+  | "word"    $string_literal
+  | "regex"   $string_literal
+  | $userval
+;
 
 rule node_decl = "node" $identifier "="     ";" ;
 

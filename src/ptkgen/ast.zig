@@ -98,13 +98,14 @@ pub const Rule = struct { // rule <name> ( : <type> )? = ...;
 
 pub const Pattern = struct { // token <name> = ...;
     name: Identifier,
-    pattern: Data,
+    data: Data,
+    invisible: bool,
 
     pub const Data = union(enum) {
         literal: StringLiteral, // literal "+"
         word: StringLiteral, // word "while"
         regex: StringLiteral, // regex "string"
-        external: CodeLiteral, // custom `matchMe`
+        external: UserDefinedIdentifier, // @matchMe
     };
 };
 

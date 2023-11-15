@@ -1,0 +1,4 @@
+
+
+pattern a_word = literal "a-word" skip;
+

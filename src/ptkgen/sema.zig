@@ -1,6 +1,8 @@
 const std = @import("std");
 const ptk = @import("parser-toolkit");
 
+const logger = std.log.scoped(.ptk_sema);
+
 const ast = @import("ast.zig");
 const Diagnostics = @import("Diagnostics.zig");
 
@@ -74,20 +76,31 @@ pub const Pattern = struct {
 };
 
 pub const Type = union(enum) {
+    // trivial types:
     code_literal: String,
-    user_value: String,
+    user_type: String,
 
+    // anonymous compound types:
     optional: *Type,
     record: *CompoundType,
     variant: *CompoundType,
+
+    // ast nodes are basically "named types" and must be handled as such
+    named: *Node,
+
+    pub fn id(t: *const Type) TypeId {
+        return @as(TypeId, t.*);
+    }
 };
+
+pub const TypeId: type = std.meta.Tag(Type);
 
 pub const CompoundType = struct {
     fields: StringHashMap(Field),
 };
 
 pub const Field = struct {
-    name: String,
+    // name: String,
     type: *Type,
 };
 
@@ -116,6 +129,8 @@ pub fn analyze(allocator: std.mem.Allocator, diagnostics: *Diagnostics, strings:
         .node_to_ast = std.AutoHashMap(*Node, *ast.Node).init(allocator),
         .pattern_to_ast = std.AutoHashMap(*Pattern, *ast.Pattern).init(allocator),
 
+        .type_stash = Analyzer.TypeStash.init(allocator),
+
         .document = document,
 
         .target = &grammar,
@@ -135,6 +150,10 @@ pub fn analyze(allocator: std.mem.Allocator, diagnostics: *Diagnostics, strings:
     return grammar;
 }
 
+var BAD_TYPE_SENTINEL: Type = undefined;
+var BAD_NODE_SENTINEL: Node = undefined;
+var BAD_RULE_SENTINEL: Rule = undefined;
+
 fn innerAnalysis(analyzer: *Analyzer) AnalyzeError!void {
     // Phase 0: Validate productions on legality (coarse error checking)
     // - Generates errors for badly constructed elements
@@ -148,10 +167,11 @@ fn innerAnalysis(analyzer: *Analyzer) AnalyzeError!void {
     // Phase 2: Instantiate all node types and patterns, determine start symbol
 
     try analyzer.iterateOn(.start, Analyzer.instantiateStartSymbol);
-    try analyzer.iterateOn(.node, Analyzer.instantiatePatterns);
+    try analyzer.iterateOn(.pattern, Analyzer.instantiatePatterns);
     try analyzer.iterateOn(.node, Analyzer.instantiateNodeTypes);
 
     // Phase 3: Validate generated types
+    try analyzer.iterateOn(.node, Analyzer.validateNodes);
 
     // Phase 4: Instantiate AST productions
 
@@ -160,6 +180,8 @@ fn innerAnalysis(analyzer: *Analyzer) AnalyzeError!void {
 }
 
 const Analyzer = struct {
+    const TypeStash = std.HashMap(*Type, void, TypeContext, std.hash_map.default_max_load_percentage);
+
     arena: std.mem.Allocator,
     diagnostics: *Diagnostics,
     strings: *const ptk.strings.Pool,
@@ -171,10 +193,15 @@ const Analyzer = struct {
     node_to_ast: std.AutoHashMap(*Node, *ast.Node),
     pattern_to_ast: std.AutoHashMap(*Pattern, *ast.Pattern),
 
+    type_stash: TypeStash,
+
+    deduplicated_type_count: usize = 0,
+
     fn deinit(analyzer: *Analyzer) void {
         analyzer.rule_to_ast.deinit();
         analyzer.node_to_ast.deinit();
         analyzer.pattern_to_ast.deinit();
+        analyzer.type_stash.deinit();
         analyzer.* = undefined;
     }
 
@@ -313,16 +340,112 @@ const Analyzer = struct {
         };
     }
 
-    fn instantiatePatterns(analyzer: *Analyzer, node: *ast.Node) !void {
-        _ = analyzer;
-        _ = node;
-        //
+    fn instantiatePatterns(analyzer: *Analyzer, ast_pattern: *ast.Pattern) !void {
+        const sema_pattern = analyzer.target.patterns.get(ast_pattern.name.value).?;
+
+        sema_pattern.data = switch (ast_pattern.data) {
+            .literal => |value| .{ .literal_match = value.value },
+            .word => |value| .{ .word = value.value },
+            .regex => |value| .{ .regex = value.value },
+            .external => |value| .{ .external = value.value },
+        };
+
+        // TODO: Implement regex validation here!
     }
 
-    fn instantiateNodeTypes(analyzer: *Analyzer, node: *ast.Node) !void {
+    fn instantiateNodeTypes(analyzer: *Analyzer, ast_node: *ast.Node) !void {
+        const sema_node = analyzer.target.nodes.get(ast_node.name.value).?;
+
+        sema_node.type = try analyzer.resolveType(&ast_node.value);
+    }
+
+    fn validateNodes(analyzer: *Analyzer, ast_node: *ast.Node) !void {
+        const sema_node = analyzer.target.nodes.get(ast_node.name.value).?;
+
+        try analyzer.validateType(sema_node.type);
+    }
+
+    fn validateType(analyzer: *Analyzer, type_node: *Type) !void {
         _ = analyzer;
-        _ = node;
-        //
+        if (type_node == &BAD_TYPE_SENTINEL) {
+            @panic("bad sentinel");
+        }
+    }
+
+    fn createCompoundType(analyzer: *Analyzer, def: ast.CompoundType) !*CompoundType {
+        const ct = try analyzer.target.arena.allocator().create(CompoundType);
+        errdefer analyzer.target.arena.allocator().destroy(ct);
+
+        ct.* = CompoundType{
+            .fields = StringHashMap(Field).init(analyzer.target.arena.allocator()),
+        };
+        errdefer ct.fields.deinit();
+
+        try ct.fields.ensureTotalCapacity(def.fields.len());
+
+        var iter = ast.iterate(def.fields);
+        while (iter.next()) |field_def| {
+            const field_type = try analyzer.resolveType(&field_def.type);
+            ct.fields.putAssumeCapacityNoClobber(field_def.name.value, .{
+                .type = field_type,
+            });
+        }
+
+        return ct;
+    }
+
+    fn destroyCompoundType(analyzer: *Analyzer, ct: *CompoundType) void {
+        ct.fields.deinit();
+        analyzer.target.arena.allocator().destroy(ct);
+        ct.* = undefined;
+    }
+
+    fn resolveType(analyzer: *Analyzer, type_node: *ast.TypeSpec) error{OutOfMemory}!*Type {
+        var compound_type: ?*CompoundType = null;
+        var proto_type: Type = switch (type_node.*) {
+            .reference => |def| .{
+                .named = analyzer.target.nodes.get(def.identifier) orelse blk: {
+                    try analyzer.emitDiagnostic(def.location, .reference_to_undeclared_node, .{
+                        .identifier = analyzer.strings.get(def.identifier),
+                    });
+                    break :blk &BAD_NODE_SENTINEL;
+                },
+            },
+            .literal => |def| Type{ .code_literal = def.value },
+            .custom => |def| Type{ .user_type = def.value },
+            .record => |def| blk: {
+                compound_type = try analyzer.createCompoundType(def);
+                break :blk .{ .record = compound_type.? };
+            },
+            .variant => |def| blk: {
+                compound_type = try analyzer.createCompoundType(def);
+                break :blk .{ .record = compound_type.? };
+            },
+        };
+        errdefer if (compound_type) |ct|
+            analyzer.destroyCompoundType(ct);
+
+        if (analyzer.getUniqueTypeHandle(&proto_type)) |resolved_type| {
+            analyzer.deduplicated_type_count += 1;
+            // logger.debug("deduplicated a {s}", .{@tagName(resolved_type.*)});
+            return resolved_type;
+        }
+
+        const new_type = try analyzer.target.arena.allocator().create(Type);
+        errdefer analyzer.target.arena.allocator().destroy(new_type);
+
+        new_type.* = proto_type;
+
+        try analyzer.type_stash.putNoClobber(new_type, {});
+
+        return new_type;
+    }
+
+    fn getUniqueTypeHandle(analyzer: Analyzer, proto_type: *Type) ?*Type {
+        if (analyzer.type_stash.getKey(proto_type)) |key| {
+            return key;
+        }
+        return null;
     }
 
     const DeclarationError = error{
@@ -364,5 +487,35 @@ const Analyzer = struct {
 
     fn emitDiagnostic(analyzer: *Analyzer, location: ptk.Location, comptime code: Diagnostics.Code, params: Diagnostics.Data(code)) !void {
         try analyzer.diagnostics.emit(location, code, params);
+    }
+};
+
+const TypeContext = struct {
+    const HashFn = std.hash.Fnv1a_64;
+
+    pub fn eql(ctx: TypeContext, lhs: *Type, rhs: *Type) bool {
+        _ = ctx;
+        if (lhs == rhs)
+            return true;
+        if (lhs.id() != rhs.id())
+            return false;
+        switch (lhs.*) {
+            inline .code_literal, .user_type, .optional, .named => |val, tag| return val == @field(rhs, @tagName(tag)),
+            .record, .variant => return false, // they are same-by-identitiy
+        }
+    }
+
+    pub fn hash(ctx: TypeContext, t: *Type) u64 {
+        _ = ctx;
+        var hasher = HashFn.init();
+        hasher.update(@tagName(t.*));
+        switch (t.*) {
+            .code_literal => |lit| hasher.update(&std.mem.toBytes(@intFromEnum(lit))),
+            .user_type => |lit| hasher.update(&std.mem.toBytes(@intFromEnum(lit))),
+            .optional => |child| hasher.update(&std.mem.toBytes(child)),
+            .named => |node| hasher.update(&std.mem.toBytes(node)),
+            .record, .variant => hasher.update(&std.mem.toBytes(t)),
+        }
+        return hasher.final();
     }
 };

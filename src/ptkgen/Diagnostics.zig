@@ -32,6 +32,7 @@ pub const Code = enum(u16) {
     unexpected_token_mapping = 1111,
     unexpected_token_production_list = 1112,
     unexpected_token_production = 1113,
+    unexpected_token_pattern = 1114,
 
     // recoverable syntax errors (1200-1299):
     illegal_empty_group = 1200,
@@ -154,9 +155,7 @@ const DuplicateIdentifier = struct {
     identifier: []const u8,
     previous_location: ptk.Location,
 };
-const UndeclaredIdentifier = struct {
-    identifier: []const u8
-};
+const UndeclaredIdentifier = struct { identifier: []const u8 };
 
 pub fn Data(comptime code: Code) type {
     return switch (code) {
@@ -178,6 +177,7 @@ pub fn Data(comptime code: Code) type {
         .unexpected_token_mapping => UnexpectedTokenMessage,
         .unexpected_token_production_list => UnexpectedTokenMessage,
         .unexpected_token_production => UnexpectedTokenMessage,
+        .unexpected_token_pattern => UnexpectedTokenMessage,
 
         .unexpected_eof => NoDiagnosticData,
 

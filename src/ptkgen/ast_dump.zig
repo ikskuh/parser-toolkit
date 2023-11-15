@@ -57,7 +57,18 @@ const AstPrinter = struct {
                 },
 
                 .pattern => |pattern| {
-                    print("pattern {s}", .{printer.fmtId(pattern.name.value)});
+                    print("pattern {s} = ", .{printer.fmtId(pattern.name.value)});
+
+                    switch (pattern.data) {
+                        .literal => |value| print("literal \"{}\"", .{printer.fmtString(value.value)}),
+                        .word => |value| print("word \"{}\"", .{printer.fmtString(value.value)}),
+                        .regex => |value| print("regex \"{}\"", .{printer.fmtString(value.value)}),
+                        .external => |value| print("@{}", .{printer.fmtId(value.value)}),
+                    }
+
+                    if (pattern.invisible) {
+                        print(" skip", .{});
+                    }
                     print(";\n", .{});
                 },
             }

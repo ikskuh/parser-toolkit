@@ -1,0 +1,4 @@
+
+
+pattern a_word = regex "a-word";
+

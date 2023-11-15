@@ -1,0 +1,4 @@
+# expected: E1114
+
+pattern a_word = `illegal`;
+
