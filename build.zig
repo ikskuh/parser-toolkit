@@ -8,7 +8,7 @@ pub fn build(b: *std.build.Builder) void {
         .dependencies = &.{},
     });
 
-    var main_tests = b.addTest(.{
+    const main_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
         .optimize = optimize,
     });
