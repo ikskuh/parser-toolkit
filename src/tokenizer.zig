@@ -297,7 +297,7 @@ test "save/restore tokenization" {
     , null);
 
     const id0 = (try tokenizer.next()) orelse return error.MissingToken;
-    var state = tokenizer.saveState();
+    const state = tokenizer.saveState();
     const ws0 = (try tokenizer.next()) orelse return error.MissingToken;
     tokenizer.restoreState(state);
     const ws1 = (try tokenizer.next()) orelse return error.MissingToken;
