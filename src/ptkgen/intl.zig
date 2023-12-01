@@ -76,14 +76,40 @@ pub const Localization = struct {
 
         FileTooBig: []const u8,
         InvalidSourceEncoding: []const u8,
+
+        DiskQuota: []const u8,
+        NoSpaceLeft: []const u8,
+        DeviceBusy: []const u8,
+        InvalidArgument: []const u8,
+        NotOpenForWriting: []const u8,
+        LockViolation: []const u8,
+        ProcessFdQuotaExceeded: []const u8,
+        SystemFdQuotaExceeded: []const u8,
+        SharingViolation: []const u8,
+        PathAlreadyExists: []const u8,
+        FileNotFound: []const u8,
+        PipeBusy: []const u8,
+        NameTooLong: []const u8,
+        InvalidUtf8: []const u8,
+        BadPathName: []const u8,
+        NetworkNotFound: []const u8,
+        InvalidHandle: []const u8,
+        SymLinkLoop: []const u8,
+        NoDevice: []const u8,
+        NotDir: []const u8,
+        FileLocksNotSupported: []const u8,
+        FileBusy: []const u8,
+        LinkQuotaExceeded: []const u8,
+        ReadOnlyFileSystem: []const u8,
+        RenameAcrossMountPoints: []const u8,
     },
 
     pub fn generate(comptime buffer: []const u8) Localization {
         @setEvalBranchQuota(1_000_000);
 
-        var alloc_buf: [buffer.len]u8 = undefined;
+        var alloc_buf: [4 * buffer.len]u8 = undefined;
         var fba = std.heap.FixedBufferAllocator.init(&alloc_buf);
 
-        return std.json.parseFromSliceLeaky(Localization, fba.allocator(), buffer, .{}) catch @compileError("failed to parse json");
+        return std.json.parseFromSliceLeaky(Localization, fba.allocator(), buffer, .{}) catch |err| @compileError(std.fmt.comptimePrint("failed to parse json: {}", .{err}));
     }
 };

@@ -1,8 +1,8 @@
 const std = @import("std");
 const ptk = @import("parser-toolkit");
 
-const ast = @import("ast.zig");
-const parser = @import("parser.zig");
+const ast = @import("../ast.zig");
+const parser = @import("../parser.zig");
 
 pub fn dump(strings: *const ptk.strings.Pool, decls: parser.Document) void {
     var printer = AstPrinter{

@@ -1,8 +1,8 @@
 const std = @import("std");
 const ptk = @import("parser-toolkit");
 
-const sema = @import("sema.zig");
-const parser = @import("parser.zig");
+const sema = @import("../sema.zig");
+const parser = @import("../parser.zig");
 
 pub fn dump(strings: *const ptk.strings.Pool, grammar: sema.Grammar) void {
     var printer = SemaPrinter{

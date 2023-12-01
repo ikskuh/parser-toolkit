@@ -10,8 +10,9 @@ const ast = @import("ast.zig");
 const sema = @import("sema.zig");
 const intl = @import("intl.zig");
 const parser = @import("parser.zig");
-const ast_dump = @import("ast_dump.zig");
-const sema_dump = @import("sema_dump.zig");
+const ast_dump = @import("dump/ast.zig");
+const sema_dump = @import("dump/sema.zig");
+const json_dump = @import("dump/json.zig");
 
 const Diagnostics = @import("Diagnostics.zig");
 
@@ -20,11 +21,17 @@ comptime {
     _ = parser;
 }
 
+pub const Format = enum {
+    json,
+    // zig,
+};
+
 pub const CliOptions = struct {
     help: bool = false,
     output: ?[]const u8 = null,
     test_mode: TestMode = .none,
     trace: bool = false,
+    format: Format = .json,
 
     @"max-file-size": u32 = 4 * 1024, // 4 MB of source code is a lot!
 
@@ -47,6 +54,8 @@ pub const CliOptions = struct {
             .@"max-file-size" = "Maximum input file size in KiB (default: 4096)",
 
             .trace = "Prints a parse trace",
+
+            .format = "Selects the output format of the grammar. Can be one of [ json, zig ]",
         },
     };
 };
@@ -196,6 +205,7 @@ fn convertErrorToDiagnostics(diagnostics: *Diagnostics, file_name: []const u8, e
             }, .file_limit_exceeded, .{});
         },
 
+        // input errors:
         error.InputOutput,
         error.AccessDenied,
         error.BrokenPipe,
@@ -208,6 +218,33 @@ fn convertErrorToDiagnostics(diagnostics: *Diagnostics, file_name: []const u8, e
         error.ConnectionTimedOut,
         error.NotOpenForReading,
         error.NetNameDeleted,
+
+        // output errors:
+        error.DiskQuota,
+        error.NoSpaceLeft,
+        error.DeviceBusy,
+        error.InvalidArgument,
+        error.NotOpenForWriting,
+        error.LockViolation,
+        error.ProcessFdQuotaExceeded,
+        error.SystemFdQuotaExceeded,
+        error.SharingViolation,
+        error.PathAlreadyExists,
+        error.FileNotFound,
+        error.PipeBusy,
+        error.NameTooLong,
+        error.InvalidUtf8,
+        error.BadPathName,
+        error.NetworkNotFound,
+        error.InvalidHandle,
+        error.SymLinkLoop,
+        error.NoDevice,
+        error.NotDir,
+        error.FileLocksNotSupported,
+        error.FileBusy,
+        error.LinkQuotaExceeded,
+        error.ReadOnlyFileSystem,
+        error.RenameAcrossMountPoints,
         => |e| {
             try diagnostics.emit(.{
                 .source = file_name,
@@ -318,5 +355,44 @@ fn compileFile(
 
         std.debug.print("\n\nsema dump:\n", .{});
         sema_dump.dump(string_pool, grammar);
+    }
+
+    if (options.test_mode != .none)
+        return;
+
+    // Output generation:
+    {
+        const use_stdout = (options.output == null) or std.mem.eql(u8, options.output.?, "-");
+
+        var atomic_output_file: std.fs.AtomicFile = undefined;
+        if (!use_stdout) {
+            atomic_output_file = try std.fs.cwd().atomicFile(options.output.?, .{});
+        }
+        defer if (!use_stdout)
+            atomic_output_file.deinit();
+
+        var output_file = if (use_stdout)
+            std.io.getStdOut()
+        else
+            atomic_output_file.file;
+
+        // write to output_file here:
+        switch (options.format) {
+            .json => {
+                var arena = std.heap.ArenaAllocator.init(allocator);
+                defer arena.deinit();
+
+                var json_repr: std.json.Value = try json_dump.createJsonValue(
+                    &arena,
+                    string_pool,
+                    grammar,
+                );
+
+                try std.json.stringify(json_repr, .{}, output_file.writer());
+            },
+        }
+
+        if (!use_stdout)
+            try atomic_output_file.finish();
     }
 }
