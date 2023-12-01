@@ -70,11 +70,12 @@ rule value_list =
     <mapped_value> ( "," <mapped_value> )*
 ;
 
-
 # TODO:
 
+rule type = "empty";
+
 pattern rule_ref = literal "";
-pattern identifier = literal "";
+pattern identifier = regex "[A-Za-z_][A-Za-z0-9_]*";
 pattern string_literal = literal "";
 pattern userval = literal "";
 pattern token_ref = literal "";
@@ -82,4 +83,3 @@ pattern code_literal = literal "";
 pattern value_ref = literal "";
 pattern mapped_value = literal "";
 
-rule type = "empty";

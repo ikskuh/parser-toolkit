@@ -55,9 +55,9 @@ node TLDeclaration = variant
     module    : !module
 ;
 
-node namespace = @extern;
-node interface = @extern;
-node module = @extern;
+node namespace = @Namespace;
+node interface = @Interface;
+node module = @Module;
 
 rule toplevel-decl : !TLDeclaration = 
       <namespace-group> => ns: $0 # this is syntax for a union field selector as unions are not compounds

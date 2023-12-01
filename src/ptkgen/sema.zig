@@ -77,7 +77,7 @@ pub const Node = struct {
 pub const Pattern = struct {
     location: ptk.Location,
     name: String,
-
+    is_literal: bool,
     data: Data,
 
     pub const Data = union(enum) {
@@ -324,7 +324,7 @@ const Analyzer = struct {
                     instance.* = .{
                         .location = pattern.name.location,
                         .name = pattern.name.value,
-
+                        .is_literal = false,
                         .data = undefined, // created in phase 2
                     };
                 },
@@ -429,6 +429,7 @@ const Analyzer = struct {
                         .location = literal.location, // place of first use
                         .name = literal.value,
                         .data = .{ .literal_match = literal.value },
+                        .is_literal = true,
                     };
                 }
                 return Production{ .terminal = gop.value_ptr.* };

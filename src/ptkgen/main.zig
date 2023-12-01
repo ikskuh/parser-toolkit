@@ -11,6 +11,7 @@ const sema = @import("sema.zig");
 const intl = @import("intl.zig");
 const parser = @import("parser.zig");
 const ast_dump = @import("ast_dump.zig");
+const sema_dump = @import("sema_dump.zig");
 
 const Diagnostics = @import("Diagnostics.zig");
 
@@ -312,6 +313,10 @@ fn compileFile(
     // TODO: Implement parsergen / tablegen / highlightergen
 
     if (options.test_mode == .none) {
+        std.debug.print("ast dump:\n", .{});
         ast_dump.dump(string_pool, tree);
+
+        std.debug.print("\n\nsema dump:\n", .{});
+        sema_dump.dump(string_pool, grammar);
     }
 }

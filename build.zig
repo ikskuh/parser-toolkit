@@ -144,7 +144,7 @@ const analyis_accept_files = [_][]const u8{
 
 const analyis_reject_files = [_][]const u8{
     "test/analysis/reject/duplicate-node.ptk",
-    // "test/analysis/reject/duplicate-pattern.ptk", // TODO: Implement pattern support in parser
+    "test/analysis/reject/duplicate-pattern.ptk",
     "test/analysis/reject/duplicate-rule.ptk",
 
     "test/analysis/accept/expect-warn-missing-start.ptk",
@@ -155,6 +155,9 @@ const analyis_reject_files = [_][]const u8{
 
     "test/analysis/reject/duplicate-field-record.ptk",
     "test/analysis/reject/duplicate-field-variant.ptk",
+
+    "test/analysis/reject/production-undeclared-pattern-ref.ptk",
+    "test/analysis/reject/production-undeclared-rule-ref.ptk",
 };
 
 const parser_accept_files = [_][]const u8{
