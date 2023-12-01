@@ -52,6 +52,8 @@ pub const Code = enum(u16) {
 
     multiple_start_symbols = 1306,
 
+    duplicate_compound_field = 1307,
+
     // semantic warnings (4000-4099):
 
     missing_start_symbol = 4000,
@@ -213,6 +215,11 @@ pub fn Data(comptime code: Code) type {
         },
 
         .missing_start_symbol => NoDiagnosticData,
+
+        .duplicate_compound_field => struct {
+            identifier: []const u8,
+            previous_location: ptk.Location,
+        },
 
         // else => @compileError(std.fmt.comptimePrint("Code {} has no diagnostic type associated!", .{code})),
     };

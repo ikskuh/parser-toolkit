@@ -22,11 +22,13 @@ pub const Grammar = struct {
     rules: StringHashMap(*Rule),
     nodes: StringHashMap(*Node),
     patterns: StringHashMap(*Pattern),
+    literal_patterns: StringHashMap(*Pattern),
 
     pub fn deinit(grammar: *Grammar) void {
         grammar.rules.deinit();
         grammar.nodes.deinit();
         grammar.patterns.deinit();
+        grammar.literal_patterns.deinit();
         grammar.arena.deinit();
         grammar.* = undefined;
     }
@@ -42,7 +44,14 @@ pub const Rule = struct {
     name: String,
 
     type: ?*Type,
-    production: *Production,
+    productions: []MappedProduction,
+};
+
+/// A production of a rule that is able to map the parsed structure
+/// into an AST node.
+pub const MappedProduction = struct {
+    production: Production,
+    mapping: ?Mapping,
 };
 
 pub const Production = union(enum) {
@@ -52,6 +61,10 @@ pub const Production = union(enum) {
     optional: *Production, // ( ... )?
     repetition_zero: *Production, // [ ... ]*
     repetition_one: *Production, // [ ... ]+
+};
+
+pub const Mapping = struct {
+    //
 };
 
 pub const Node = struct {
@@ -100,6 +113,7 @@ pub const CompoundType = struct {
 };
 
 pub const Field = struct {
+    location: ptk.Location,
     // name: String,
     type: *Type,
 };
@@ -115,6 +129,7 @@ pub fn analyze(allocator: std.mem.Allocator, diagnostics: *Diagnostics, strings:
         .rules = StringHashMap(*Rule).init(allocator),
         .nodes = StringHashMap(*Node).init(allocator),
         .patterns = StringHashMap(*Pattern).init(allocator),
+        .literal_patterns = StringHashMap(*Pattern).init(allocator),
 
         .start = null,
     };
@@ -153,6 +168,7 @@ pub fn analyze(allocator: std.mem.Allocator, diagnostics: *Diagnostics, strings:
 var BAD_TYPE_SENTINEL: Type = undefined;
 var BAD_NODE_SENTINEL: Node = undefined;
 var BAD_RULE_SENTINEL: Rule = undefined;
+var BAD_PATTERN_SENTINEL: Pattern = undefined;
 
 fn innerAnalysis(analyzer: *Analyzer) AnalyzeError!void {
     // Phase 0: Validate productions on legality (coarse error checking)
@@ -174,6 +190,7 @@ fn innerAnalysis(analyzer: *Analyzer) AnalyzeError!void {
     try analyzer.iterateOn(.node, Analyzer.validateNodes);
 
     // Phase 4: Instantiate AST productions
+    try analyzer.iterateOn(.rule, Analyzer.instantiateRules);
 
     // Phase 5: Instantiate and validate AST mappings
 
@@ -249,6 +266,8 @@ const Analyzer = struct {
         }
     }
 
+    /// Creates declarations in the target Grammar and makes sure all declared objects are reachable.
+    /// Emits diagnostics for duplicate declarations.
     fn createDeclarations(analyzer: *Analyzer) !void {
         var iter = ast.iterate(analyzer.document);
         while (iter.next()) |item| {
@@ -270,7 +289,7 @@ const Analyzer = struct {
                         .name = rule.name.value,
 
                         .type = undefined, // created in phase 4
-                        .production = undefined, // created in phase 5
+                        .productions = &.{}, // created in phase 5
                     };
                 },
 
@@ -313,6 +332,8 @@ const Analyzer = struct {
         }
     }
 
+    /// Searches all start symbol declarations and stores a reference to the initial rule.
+    /// Will emit diagnostics for duplicate start symbol decls and invalid references.
     fn instantiateStartSymbol(analyzer: *Analyzer, start: *ast.RuleRef) !void {
         if (analyzer.target.start) |old_start| {
             try analyzer.emitDiagnostic(start.location, .multiple_start_symbols, .{
@@ -340,6 +361,7 @@ const Analyzer = struct {
         };
     }
 
+    /// Fully populate all content of the pattern declarations. Emits diagnostics for invalid patterns.
     fn instantiatePatterns(analyzer: *Analyzer, ast_pattern: *ast.Pattern) !void {
         const sema_pattern = analyzer.target.patterns.get(ast_pattern.name.value).?;
 
@@ -353,6 +375,8 @@ const Analyzer = struct {
         // TODO: Implement regex validation here!
     }
 
+    /// Instantiates and validates all node declarations.
+    /// Emits diagnostics for bad type declarations.
     fn instantiateNodeTypes(analyzer: *Analyzer, ast_node: *ast.Node) !void {
         const sema_node = analyzer.target.nodes.get(ast_node.name.value).?;
 
@@ -365,13 +389,136 @@ const Analyzer = struct {
         try analyzer.validateType(sema_node.type);
     }
 
-    fn validateType(analyzer: *Analyzer, type_node: *Type) !void {
-        _ = analyzer;
-        if (type_node == &BAD_TYPE_SENTINEL) {
-            @panic("bad sentinel");
+    fn instantiateRules(analyzer: *Analyzer, ast_rule: *ast.Rule) !void {
+        const sema_rule = analyzer.target.rules.get(ast_rule.name.value).?;
+
+        sema_rule.type = if (ast_rule.ast_type) |ast_type|
+            try analyzer.resolveType(&ast_type)
+        else
+            null;
+
+        sema_rule.productions = try analyzer.target.arena.allocator().alloc(MappedProduction, ast_rule.productions.len());
+        errdefer {
+            analyzer.target.arena.allocator().free(sema_rule.productions);
+            sema_rule.productions = &.{};
+        }
+
+        if (sema_rule.productions.len == 0) {
+            @panic("empty sema rule!");
+        }
+
+        var iter = ast.iterate(ast_rule.productions);
+        var index: usize = 0;
+        while (iter.next()) |ast_production| : (index += 1) {
+            const sema_production = &sema_rule.productions[index];
+
+            sema_production.* = MappedProduction{
+                .production = try analyzer.translateProduction(ast_production.production),
+                .mapping = null, // Will be instantiated later
+            };
         }
     }
 
+    fn translateProduction(analyzer: *Analyzer, ast_prod: ast.Production) error{OutOfMemory}!Production {
+        switch (ast_prod) {
+            .literal => |literal| {
+                const gop = try analyzer.target.literal_patterns.getOrPut(literal.value);
+                if (!gop.found_existing) {
+                    gop.value_ptr.* = try analyzer.target.arena.allocator().create(Pattern);
+                    gop.value_ptr.*.* = .{
+                        .location = literal.location, // place of first use
+                        .name = literal.value,
+                        .data = .{ .literal_match = literal.value },
+                    };
+                }
+                return Production{ .terminal = gop.value_ptr.* };
+            },
+            .terminal => |terminal| {
+                if (analyzer.target.patterns.get(terminal.identifier)) |pattern| {
+                    return Production{ .terminal = pattern };
+                } else {
+                    try analyzer.emitDiagnostic(terminal.location, .reference_to_undeclared_pattern, .{
+                        .identifier = analyzer.strings.get(terminal.identifier),
+                    });
+                    return Production{ .terminal = &BAD_PATTERN_SENTINEL };
+                }
+            },
+            .recursion => |recursion| {
+                if (analyzer.target.rules.get(recursion.identifier)) |rule| {
+                    return Production{ .recursion = rule };
+                } else {
+                    try analyzer.emitDiagnostic(recursion.location, .reference_to_undeclared_rule, .{
+                        .identifier = analyzer.strings.get(recursion.identifier),
+                    });
+                    return Production{ .recursion = &BAD_RULE_SENTINEL };
+                }
+            },
+            .sequence => |sequence| {
+                if (sequence.len() == 0)
+                    @panic("bad sequence: empty");
+
+                var seq = std.ArrayList(Production).init(analyzer.target.arena.allocator());
+                defer seq.deinit();
+
+                try seq.ensureTotalCapacityPrecise(sequence.len());
+
+                var iter = ast.iterate(sequence);
+                while (iter.next()) |inner_prod| {
+                    const inner_sema = try analyzer.translateProduction(inner_prod.*);
+                    seq.appendAssumeCapacity(inner_sema);
+                }
+
+                return Production{
+                    .sequence = seq.toOwnedSlice() catch @panic("bad capacity"),
+                };
+            },
+            .optional => |optional| {
+                const nested = try analyzer.target.arena.allocator().create(Production);
+                errdefer analyzer.target.arena.allocator().destroy(nested);
+                nested.* = try analyzer.translateProduction(.{ .sequence = optional });
+                return .{ .optional = nested };
+            },
+            .repetition_zero => |repetition| {
+                const nested = try analyzer.target.arena.allocator().create(Production);
+                errdefer analyzer.target.arena.allocator().destroy(nested);
+                nested.* = try analyzer.translateProduction(.{ .sequence = repetition });
+                return .{ .repetition_zero = nested };
+            },
+            .repetition_one => |repetition| {
+                const nested = try analyzer.target.arena.allocator().create(Production);
+                errdefer analyzer.target.arena.allocator().destroy(nested);
+                nested.* = try analyzer.translateProduction(.{ .sequence = repetition });
+                return .{ .repetition_one = nested };
+            },
+        }
+    }
+
+    /// Checks if the given type is semantically ok or emits compiler errors if not.
+    fn validateType(analyzer: *Analyzer, type_node: *Type) error{OutOfMemory}!void {
+        if (type_node == &BAD_TYPE_SENTINEL) {
+            @panic("bad sentinel");
+        }
+
+        switch (type_node.*) {
+            .code_literal, .user_type => {}, // always fine
+            .optional => |child_type| try analyzer.validateType(child_type),
+            .record, .variant => |compound_type| {
+                var fields = compound_type.fields.iterator();
+                while (fields.next()) |kv| {
+                    const field_type = kv.value_ptr.type;
+                    try analyzer.validateType(field_type);
+                }
+            },
+            .named => |node| {
+                if (node == &BAD_NODE_SENTINEL) {
+                    @panic("bad node!");
+                }
+            },
+        }
+    }
+
+    /// Constructs a new compound type from the given AST declaration. Will emit diagnostics
+    /// on error and returns an incomplete type if errors happened.
     fn createCompoundType(analyzer: *Analyzer, def: ast.CompoundType) !*CompoundType {
         const ct = try analyzer.target.arena.allocator().create(CompoundType);
         errdefer analyzer.target.arena.allocator().destroy(ct);
@@ -386,9 +533,20 @@ const Analyzer = struct {
         var iter = ast.iterate(def.fields);
         while (iter.next()) |field_def| {
             const field_type = try analyzer.resolveType(&field_def.type);
-            ct.fields.putAssumeCapacityNoClobber(field_def.name.value, .{
+            const gop_result = ct.fields.getOrPutAssumeCapacity(field_def.name.value);
+
+            if (gop_result.found_existing) {
+                try analyzer.emitDiagnostic(field_def.location, .duplicate_compound_field, .{
+                    .previous_location = gop_result.value_ptr.location,
+                    .identifier = analyzer.strings.get(field_def.name.value),
+                });
+                continue;
+            }
+
+            gop_result.value_ptr.* = .{
                 .type = field_type,
-            });
+                .location = field_def.location,
+            };
         }
 
         return ct;
@@ -400,7 +558,7 @@ const Analyzer = struct {
         ct.* = undefined;
     }
 
-    fn resolveType(analyzer: *Analyzer, type_node: *ast.TypeSpec) error{OutOfMemory}!*Type {
+    fn resolveType(analyzer: *Analyzer, type_node: *const ast.TypeSpec) error{OutOfMemory}!*Type {
         var compound_type: ?*CompoundType = null;
         var proto_type: Type = switch (type_node.*) {
             .reference => |def| .{

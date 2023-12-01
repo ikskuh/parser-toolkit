@@ -1,0 +1,7 @@
+# expected: E1307
+
+node bad = record
+    x: `bool`,
+    y: `bool`,
+    x: `bool`
+;

@@ -64,3 +64,7 @@ rule toplevel-decl : !TLDeclaration =
     | <interface-decl>  => interface: $0
     | <module-decl>     => module: $0
 ;
+
+rule namespace-group = "to be done";
+rule interface-decl = "to be done";
+rule module-decl = "to be done";

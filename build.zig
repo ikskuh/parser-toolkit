@@ -152,6 +152,9 @@ const analyis_reject_files = [_][]const u8{
     "test/analysis/reject/undeclared-start.ptk",
     "test/analysis/reject/duplicate-undeclared-start.ptk",
     "test/analysis/reject/duplicate-start.ptk",
+
+    "test/analysis/reject/duplicate-field-record.ptk",
+    "test/analysis/reject/duplicate-field-variant.ptk",
 };
 
 const parser_accept_files = [_][]const u8{

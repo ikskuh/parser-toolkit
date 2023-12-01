@@ -29,7 +29,8 @@
         "reference_to_undeclared_node": "Reference to undeclared node '{[identifier]}'.",
         "reference_to_undeclared_pattern": "Reference to undeclared pattern '{[identifier]}'.",
         "missing_start_symbol": "Grammar file has no start symbol declared.",
-        "multiple_start_symbols": "Another start rule '({[identifier]})' was already declared here: {[previous_location]}"
+        "multiple_start_symbols": "Another start rule '({[identifier]})' was already declared here: {[previous_location]}",
+        "duplicate_compound_field": "Another field named '{s}' was already declared here: {[previous_location]}"
     },
     "errors": {
         "SyntaxError": "syntax error",
