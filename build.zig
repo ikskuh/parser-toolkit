@@ -1,11 +1,11 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("parser-toolkit", .{
-        .source_file = .{ .path = "src/main.zig" },
-        .dependencies = &.{},
+    const module = b.addModule("parser-toolkit", .{
+        .root_source_file = .{ .path = "src/main.zig" },
     });
 
     const main_tests = b.addTest(.{
@@ -20,12 +20,10 @@ pub fn build(b: *std.build.Builder) void {
         .root_source_file = .{ .path = "examples/calculator.zig" },
         .name = "calculator",
         .optimize = optimize,
+        .target = target,
     });
-
+    calculator_example.root_module.addImport("parser-toolkit", module);
     b.installArtifact(calculator_example);
-    calculator_example.addAnonymousModule("parser-toolkit", .{
-        .source_file = .{ .path = "src/main.zig" },
-    });
 
     b.step("run", "Runs the calculator example").dependOn(&b.addRunArtifact(calculator_example).step);
 }
