@@ -5,11 +5,11 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const module = b.addModule("parser-toolkit", .{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
     });
 
     const main_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .optimize = optimize,
     });
 
@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(main_tests).step);
 
     const calculator_example = b.addExecutable(.{
-        .root_source_file = .{ .path = "examples/calculator.zig" },
+        .root_source_file = b.path("examples/calculator.zig"),
         .name = "calculator",
         .optimize = optimize,
         .target = target,
