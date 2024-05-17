@@ -136,14 +136,15 @@ pub const matchers = struct {
     pub fn takeAnyOfIgnoreCase(comptime chars: []const u8) Matcher {
         const lower_chars = comptime blk: {
             var buffer: [chars.len]u8 = undefined;
-            break :blk std.ascii.lowerString(&buffer, chars);
+            _ = std.ascii.lowerString(&buffer, chars);
+            break :blk buffer;
         };
 
         return struct {
             fn match(str: []const u8) ?usize {
                 for (str, 0..) |c, i| {
                     const lc = std.ascii.toLower(c);
-                    if (std.mem.indexOfScalar(u8, lower_chars, lc) == null) {
+                    if (std.mem.indexOfScalar(u8, &lower_chars, lc) == null) {
                         return i;
                     }
                 }
