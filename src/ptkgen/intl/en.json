@@ -30,7 +30,14 @@
         "reference_to_undeclared_pattern": "Reference to undeclared pattern '{[identifier]}'.",
         "missing_start_symbol": "Grammar file has no start symbol declared.",
         "multiple_start_symbols": "Another start rule '({[identifier]})' was already declared here: {[previous_location]}",
-        "duplicate_compound_field": "Another field named '{s}' was already declared here: {[previous_location]}"
+        "duplicate_compound_field": "Another field named '{[identifier]s}' was already declared here: {[previous_location]}",
+        "context_reference_out_of_bounds": "Context reference index out of bounds. {[index]} was given, but the highest possible index is {[limit]}.",
+        "variant_does_not_exist": "The variant field {[identifier]s} does not exist. The variant type is declared here: {[type_location]}",
+        "record_field_does_not_exist": "The record field {[field]s} does not exist. The record type is declared here: {[type_location]}",
+        "record_field_already_initialized": "The record field {[field]s} is already initialized. Previous initialization: {[prev_init]}",
+        "record_field_not_initialized": "The record field {[field]s} was not initialized. Field declared here: {[field_location]}",
+        "mapping_requires_typed_rule": "The use of a rule mapping requires that the rule has an explicitly declared type.",
+        "invalid_builtin_function": "The builtin function {[name]s} does not exist!"
     },
     "errors": {
         "SyntaxError": "syntax error",

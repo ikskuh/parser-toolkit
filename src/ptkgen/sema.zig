@@ -54,6 +54,8 @@ pub const MappedProduction = struct {
     mapping: ?Mapping,
 };
 
+/// A production is a part of a grammar. Productions consume
+/// tokens and generate structure from this.
 pub const Production = union(enum) {
     terminal: *Pattern, // literal and terminal ast nodes are wrapped to this
     recursion: *Rule, // <rule>
@@ -63,8 +65,51 @@ pub const Production = union(enum) {
     repetition_one: *Production, // [ ... ]+
 };
 
-pub const Mapping = struct {
-    //
+pub const Mapping = union(enum) {
+    record_initializer: RecordInitializer, // { a = b, c = d, ... }
+    list_initializer: ListInitializer, // [ a, b, c, ... ]
+    variant_initializer: VariantInitializer, // field: ...
+
+    user_function_call: FunctionCall, // @builtin(a,b,c)
+    builtin_function_call: FunctionCall, // identifier(a,b,c)
+
+    code_literal: String, // `code`
+    user_literal: String, // @user_data
+
+    context_reference: ContextReference, // $0
+};
+
+pub const ContextReference = struct {
+    index: u32,
+    production: *Production,
+    type: *Type,
+};
+
+const RecordInitializer = struct {
+    type: *Type,
+    fields: []FieldInitializer,
+};
+
+const FieldInitializer = struct {
+    field: *Field,
+    value: Mapping,
+};
+
+const ListInitializer = struct {
+    type: *Type,
+    items: []Mapping,
+};
+
+const VariantInitializer = struct {
+    type: *Type,
+    field: *Field,
+    value: *Mapping,
+};
+
+const FunctionCall = struct {
+    return_type: ?*Type,
+    function: String,
+    arguments: []Mapping,
 };
 
 pub const Node = struct {
@@ -101,6 +146,9 @@ pub const Type = union(enum) {
     // ast nodes are basically "named types" and must be handled as such
     named: *Node,
 
+    // builtin types:
+    token, // points to a PTK token
+
     pub fn id(t: *const Type) TypeId {
         return @as(TypeId, t.*);
     }
@@ -114,7 +162,7 @@ pub const CompoundType = struct {
 
 pub const Field = struct {
     location: ptk.Location,
-    // name: String,
+    name: String,
     type: *Type,
 };
 
@@ -169,6 +217,8 @@ var BAD_TYPE_SENTINEL: Type = undefined;
 var BAD_NODE_SENTINEL: Node = undefined;
 var BAD_RULE_SENTINEL: Rule = undefined;
 var BAD_PATTERN_SENTINEL: Pattern = undefined;
+var BAD_PRODUCTION_SENTINEL: Production = undefined;
+var BAD_FIELD_SENTINEL: Field = undefined;
 
 fn innerAnalysis(analyzer: *Analyzer) AnalyzeError!void {
     // Phase 0: Validate productions on legality (coarse error checking)
@@ -193,7 +243,8 @@ fn innerAnalysis(analyzer: *Analyzer) AnalyzeError!void {
     try analyzer.iterateOn(.rule, Analyzer.instantiateRules);
 
     // Phase 5: Instantiate and validate AST mappings
-
+    try analyzer.iterateOn(.rule, Analyzer.instantiateMappings); // Create data structures
+    try analyzer.iterateOn(.rule, Analyzer.linkAndValidateMappedProductions); // Validate if data tr
 }
 
 const Analyzer = struct {
@@ -494,6 +545,313 @@ const Analyzer = struct {
         }
     }
 
+    fn instantiateMappings(analyzer: *Analyzer, ast_rule: *ast.Rule) !void {
+        const sem_rule: *Rule = analyzer.target.rules.get(ast_rule.name.value).?;
+
+        var iter = ast.iterate(ast_rule.productions);
+
+        for (sem_rule.productions) |*sem_prod| {
+            const ast_prod = iter.next().?;
+            sem_prod.mapping = if (ast_prod.mapping) |src_mapping|
+                try analyzer.translateMapping(src_mapping)
+            else
+                null;
+        }
+        std.debug.assert(iter.next() == null);
+    }
+
+    fn translateMapping(analyzer: *Analyzer, ast_mapping: ast.AstMapping) error{OutOfMemory}!Mapping {
+        switch (ast_mapping) {
+            .literal => |ref| return Mapping{ .code_literal = ref.value },
+            .user_reference => |ref| return Mapping{ .code_literal = ref.value },
+
+            .context_reference => |ast_context_reference| {
+                return Mapping{
+                    .context_reference = .{
+                        .index = ast_context_reference.index,
+                        .production = &BAD_PRODUCTION_SENTINEL,
+                        .type = &BAD_TYPE_SENTINEL,
+                    },
+                };
+            },
+
+            inline .user_function_call, .function_call => |function_call| {
+                const function_name = function_call.function.value;
+
+                var args = try analyzer.target.arena.allocator().alloc(Mapping, function_call.arguments.len());
+                errdefer analyzer.target.arena.allocator().free(args);
+
+                var iter = ast.iterate(function_call.arguments);
+                for (args) |*item| {
+                    const src = iter.next().?;
+                    item.* = try analyzer.translateMapping(src.*);
+                }
+                std.debug.assert(iter.next() == null);
+
+                const fncall = FunctionCall{
+                    .arguments = args,
+                    .function = function_name,
+                    .return_type = null,
+                };
+
+                return switch (ast_mapping) {
+                    .user_function_call => Mapping{ .user_function_call = fncall },
+                    .function_call => Mapping{ .builtin_function_call = fncall },
+                    else => unreachable,
+                };
+            },
+
+            .variant => |ast_variant| {
+                const init_expr = try analyzer.translateMapping(ast_variant.value.*);
+
+                // ast_variant.field.value
+                return Mapping{
+                    .variant_initializer = .{
+                        .type = &BAD_TYPE_SENTINEL,
+                        .field = &BAD_FIELD_SENTINEL,
+                        .value = try moveToHeap(&analyzer.target.arena, Mapping, init_expr),
+                    },
+                };
+            },
+
+            .list => |ast_list| {
+                var items = try analyzer.target.arena.allocator().alloc(Mapping, ast_list.len());
+                errdefer analyzer.target.arena.allocator().free(items);
+
+                var iter = ast.iterate(ast_list);
+                for (items) |*item| {
+                    const src = iter.next().?;
+                    item.* = try analyzer.translateMapping(src.*);
+                }
+                std.debug.assert(iter.next() == null);
+
+                return Mapping{
+                    .list_initializer = .{
+                        .items = items,
+                        .type = &BAD_TYPE_SENTINEL,
+                    },
+                };
+            },
+
+            .record => |ast_record| {
+                var fields = try analyzer.target.arena.allocator().alloc(FieldInitializer, ast_record.len());
+                errdefer analyzer.target.arena.allocator().free(fields);
+
+                var iter = ast.iterate(ast_record);
+                for (fields) |*item| {
+                    const src = iter.next().?;
+                    const field_name = src.field.value;
+                    _ = field_name;
+                    item.* = .{
+                        .field = &BAD_FIELD_SENTINEL,
+                        .value = try analyzer.translateMapping(src.value.*),
+                    };
+                }
+                std.debug.assert(iter.next() == null);
+
+                return Mapping{
+                    .record_initializer = .{
+                        .fields = fields,
+                        .type = &BAD_TYPE_SENTINEL,
+                    },
+                };
+            },
+        }
+    }
+
+    const TypeTransform = struct {
+        optional: bool = false,
+        sequence: bool = false,
+
+        pub fn add(tt: TypeTransform, comptime field: enum { optional, sequence }) TypeTransform {
+            var copy = tt;
+            @field(copy, @tagName(field)) = true;
+            return copy;
+        }
+
+        pub fn format(tt: TypeTransform, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = fmt;
+            _ = opt;
+            var list = std.BoundedArray([]const u8, 2){};
+
+            if (tt.optional) list.appendAssumeCapacity("opt");
+            if (tt.sequence) list.appendAssumeCapacity("seq");
+
+            try writer.writeAll("TypeTransform(");
+
+            if (list.len == 0) {
+                try writer.writeAll("none");
+            } else {
+                for (list.slice(), 0..) |item, i| {
+                    if (i > 0)
+                        try writer.writeAll(",");
+                    try writer.writeAll(item);
+                }
+            }
+
+            try writer.writeAll(")");
+        }
+    };
+
+    const IndexedProd = struct {
+        transform: TypeTransform,
+        production: *Production,
+    };
+
+    const ProductionIndex = std.ArrayList(IndexedProd);
+
+    fn linkAndValidateMappedProductions(analyzer: *Analyzer, ast_rule: *ast.Rule) !void {
+        const sem_rule: *Rule = analyzer.target.rules.get(ast_rule.name.value).?;
+
+        const has_any_mapping = for (sem_rule.productions) |prod| {
+            if (prod.mapping != null)
+                break true;
+        } else false;
+
+        if (has_any_mapping and sem_rule.type == null) {
+            try analyzer.emitDiagnostic(sem_rule.location, .mapping_requires_typed_rule, .{});
+            return;
+        }
+
+        if (!has_any_mapping) {
+            // We're done here, nothing to link and validate.
+            return;
+        }
+
+        const rule_type = sem_rule.type.?;
+
+        var iter = ast.iterate(ast_rule.productions);
+
+        var prod_index = ProductionIndex.init(analyzer.arena);
+        defer prod_index.deinit();
+
+        for (sem_rule.productions) |*sem_prod| {
+            const ast_prod = iter.next().?;
+
+            if (ast_prod.mapping) |src_mapping| {
+                const dst_mapping = &sem_prod.mapping.?;
+
+                // Rebuild index:
+                prod_index.shrinkRetainingCapacity(0);
+                try analyzer.rebuildProductionIndex(&prod_index, &sem_prod.production, .{});
+
+                std.debug.print("index:\n", .{});
+                for (0.., prod_index.items) |index, item| {
+                    std.debug.print("[{}]: {} {s}\n", .{ index, item.transform, @tagName(item.production.*) });
+                }
+
+                try analyzer.linkAndValidateMapping(
+                    rule_type,
+                    dst_mapping,
+                    src_mapping,
+                    prod_index.items,
+                );
+            } else {
+                std.debug.assert(sem_prod.mapping == null);
+            }
+        }
+
+        std.debug.assert(iter.next() == null);
+    }
+
+    fn rebuildProductionIndex(analyzer: *Analyzer, prod_index: *ProductionIndex, production: *Production, transform: TypeTransform) error{OutOfMemory}!void {
+        switch (production.*) {
+            // Those are terminals and will be appended as-is:
+            .terminal => try prod_index.append(.{ .production = production, .transform = transform }),
+            .recursion => try prod_index.append(.{ .production = production, .transform = transform }),
+
+            // Sequences are unwrapped:
+            .sequence => |list| for (list) |*inner_prod| {
+                try analyzer.rebuildProductionIndex(prod_index, inner_prod, transform);
+            },
+
+            // They just "recurse" into their inner workings, but annotate type changes:
+            .optional => |inner_prod| {
+                try analyzer.rebuildProductionIndex(prod_index, inner_prod, transform.add(.optional));
+            },
+
+            .repetition_zero => |inner_prod| {
+                try analyzer.rebuildProductionIndex(prod_index, inner_prod, transform.add(.sequence));
+            },
+
+            .repetition_one => |inner_prod| {
+                try analyzer.rebuildProductionIndex(prod_index, inner_prod, transform.add(.sequence));
+            },
+        }
+    }
+
+    fn linkAndValidateMapping(analyzer: *Analyzer, type_context: *Type, sem_map: *Mapping, ast_map: ast.AstMapping, production_index: []const IndexedProd) !void {
+        _ = type_context;
+
+        switch (sem_map.*) {
+            // Always fine, and terminate recursion:
+            .code_literal, .user_literal => {},
+
+            // Rule refs:
+
+            .context_reference => |*context_reference| {
+                if (context_reference.index >= production_index.len) {
+                    context_reference.production = &BAD_PRODUCTION_SENTINEL;
+                    try analyzer.emitDiagnostic(ast_map.context_reference.location, .context_reference_out_of_bounds, .{
+                        .index = context_reference.index,
+                        .limit = @as(u32, @truncate(production_index.len - 1)), // should never underflow as empty rules are illegal
+                    });
+                    return;
+                }
+
+                context_reference.production = production_index[context_reference.index].production;
+
+                const base_type: *Type = switch (context_reference.production.*) {
+                    //
+                    .terminal => blk: {
+                        var proto: Type = .token;
+                        const canon = try analyzer.getCanonicalType(&proto);
+                        std.debug.assert(canon != &proto);
+                        break :blk canon;
+                    },
+
+                    // Invocations of other
+                    .recursion => |rule| rule.type,
+
+                    .sequence,
+                    .optional,
+                    .repetition_zero,
+                    .repetition_one,
+                    => unreachable, // we should not be able to reach those
+
+                };
+
+                // TODO: Transform type for context reference
+
+                context_reference.type = base_type;
+            },
+
+            // Calls:
+
+            .user_function_call => |*user_function_call| {
+                _ = user_function_call;
+            },
+
+            .builtin_function_call => |*builtin_function_call| {
+                _ = builtin_function_call;
+            },
+
+            // Compounds:
+
+            .record_initializer => |*record_initializer| {
+                _ = record_initializer;
+            },
+
+            .list_initializer => |*list_initializer| {
+                _ = list_initializer;
+            },
+
+            .variant_initializer => |*variant_initializer| {
+                _ = variant_initializer;
+            },
+        }
+    }
+
     /// Checks if the given type is semantically ok or emits compiler errors if not.
     fn validateType(analyzer: *Analyzer, type_node: *Type) error{OutOfMemory}!void {
         if (type_node == &BAD_TYPE_SENTINEL) {
@@ -547,6 +905,7 @@ const Analyzer = struct {
             gop_result.value_ptr.* = .{
                 .type = field_type,
                 .location = field_def.location,
+                .name = field_def.name.value,
             };
         }
 
@@ -584,6 +943,10 @@ const Analyzer = struct {
         errdefer if (compound_type) |ct|
             analyzer.destroyCompoundType(ct);
 
+        return try analyzer.getCanonicalType(&proto_type);
+    }
+
+    fn getCanonicalType(analyzer: Analyzer, proto_type: *Type) error{OutOfMemory}!?*Type {
         if (analyzer.getUniqueTypeHandle(&proto_type)) |resolved_type| {
             analyzer.deduplicated_type_count += 1;
             // logger.debug("deduplicated a {s}", .{@tagName(resolved_type.*)});
@@ -677,4 +1040,18 @@ const TypeContext = struct {
         }
         return hasher.final();
     }
+};
+
+fn moveToHeap(arena: *std.heap.ArenaAllocator, comptime T: type, template: T) error{OutOfMemory}!*T {
+    const dupe = try arena.allocator().create(T);
+    dupe.* = template;
+    return dupe;
+}
+
+pub const BuiltinFunction = struct {
+    name: []const u8,
+};
+
+pub const builtins = struct {
+    pub const foo = BuiltinFunction{ .name = "foo" };
 };

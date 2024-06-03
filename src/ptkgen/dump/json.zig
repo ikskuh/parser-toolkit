@@ -179,10 +179,71 @@ const JsonMapper = struct {
     }
 
     fn convertMapping(mapper: JsonMapper, mapping: sema.Mapping) error{OutOfMemory}!std.json.Value {
-        _ = mapping;
-        _ = mapper;
+        var jtype = mapper.newObject();
+        errdefer jtype.deinit();
 
-        @panic("implement generation of mappings");
+        try jtype.putNoClobber("kind", .{ .string = @tagName(mapping) });
+
+        switch (mapping) {
+            .record_initializer => |record_initializer| {
+                var list = mapper.newArray();
+                errdefer list.deinit();
+
+                try list.resize(record_initializer.fields.len);
+
+                for (list.items, record_initializer.fields) |*dst, src| {
+                    var jfield = mapper.newObject();
+                    errdefer jfield.deinit();
+
+                    try jfield.putNoClobber("field", mapper.jsonString(src.field.name));
+                    try jfield.putNoClobber("value", try mapper.convertMapping(src.value));
+
+                    dst.* = .{ .object = jfield };
+                }
+
+                try jtype.putNoClobber("fields", .{ .array = list });
+            },
+            .list_initializer => |list_initializer| {
+                var list = mapper.newArray();
+                errdefer list.deinit();
+
+                try list.resize(list_initializer.items.len);
+
+                for (list.items, list_initializer.items) |*dst, src| {
+                    dst.* = try mapper.convertMapping(src);
+                }
+
+                try jtype.putNoClobber("items", .{ .array = list });
+            },
+            .variant_initializer => |variant_initializer| {
+                try jtype.putNoClobber("field", mapper.jsonString(variant_initializer.field.name));
+                try jtype.putNoClobber("value", try mapper.convertMapping(variant_initializer.value.*));
+            },
+            .user_function_call, .builtin_function_call => |function_call| {
+                var list = mapper.newArray();
+                errdefer list.deinit();
+
+                try list.resize(function_call.arguments.len);
+
+                for (list.items, function_call.arguments) |*dst, src| {
+                    dst.* = try mapper.convertMapping(src);
+                }
+
+                try jtype.putNoClobber("arguments", .{ .array = list });
+
+                try jtype.putNoClobber("function", mapper.jsonString(function_call.function));
+            },
+
+            .code_literal, .user_literal => |literal| {
+                try jtype.putNoClobber("literal", mapper.jsonString(literal));
+            },
+
+            .context_reference => |context_reference| {
+                try jtype.putNoClobber("index", .{ .integer = context_reference.index });
+            },
+        }
+
+        return .{ .object = jtype };
     }
 
     fn convertType(mapper: JsonMapper, stype: *sema.Type) error{OutOfMemory}!std.json.Value {
@@ -206,6 +267,8 @@ const JsonMapper = struct {
 
                 break :blk .{ .object = fields };
             },
+
+            .token => .null,
         };
 
         var jtype = mapper.newObject();

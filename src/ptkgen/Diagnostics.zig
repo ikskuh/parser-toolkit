@@ -54,6 +54,18 @@ pub const Code = enum(u16) {
 
     duplicate_compound_field = 1307,
 
+    context_reference_out_of_bounds = 1308,
+
+    variant_does_not_exist = 1309,
+
+    record_field_does_not_exist = 1310,
+    record_field_already_initialized = 1311,
+    record_field_not_initialized = 1312,
+
+    mapping_requires_typed_rule = 1313,
+
+    invalid_builtin_function = 1314,
+
     // semantic warnings (4000-4099):
 
     missing_start_symbol = 4000,
@@ -221,6 +233,35 @@ pub fn Data(comptime code: Code) type {
             previous_location: ptk.Location,
         },
 
+        .context_reference_out_of_bounds => struct {
+            index: u32,
+            limit: u32,
+        },
+
+        .variant_does_not_exist => struct {
+            field: []const u8,
+            type_location: ptk.Location,
+        },
+
+        .record_field_does_not_exist => struct {
+            field: []const u8,
+            type_location: ptk.Location,
+        },
+        .record_field_already_initialized => struct {
+            field: []const u8,
+            prev_init: ptk.Location,
+        },
+        .record_field_not_initialized => struct {
+            field: []const u8,
+            field_location: ptk.Location,
+        },
+
+        .mapping_requires_typed_rule => NoDiagnosticData,
+
+        .invalid_builtin_function => struct {
+            name: []const u8,
+        },
+
         // else => @compileError(std.fmt.comptimePrint("Code {} has no diagnostic type associated!", .{code})),
     };
 }
@@ -339,6 +380,18 @@ fn Formatter(comptime T: type) type {
                         return;
                     }
                 } else unreachable;
+            }
+        },
+
+        // integers:
+
+        u32 => struct {
+            value: T,
+            pub fn format(item: @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+                _ = options;
+                _ = fmt;
+
+                try writer.print("{}", .{item.value});
             }
         },
 

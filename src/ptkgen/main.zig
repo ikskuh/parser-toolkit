@@ -35,9 +35,12 @@ pub const CliOptions = struct {
 
     @"max-file-size": u32 = 4 * 1024, // 4 MB of source code is a lot!
 
+    dump: bool = false,
+
     pub const shorthands = .{
         .h = "help",
         .o = "output",
+        .D = "dump",
     };
 
     pub const meta = .{
@@ -56,6 +59,8 @@ pub const CliOptions = struct {
             .trace = "Prints a parse trace",
 
             .format = "Selects the output format of the grammar. Can be one of [ json, zig ]",
+
+            .dump = "Dumps results from parser and sema to stderr.",
         },
     };
 };
@@ -349,7 +354,7 @@ fn compileFile(
 
     // TODO: Implement parsergen / tablegen / highlightergen
 
-    if (options.test_mode == .none) {
+    if (options.dump) {
         std.debug.print("ast dump:\n", .{});
         ast_dump.dump(string_pool, tree);
 
