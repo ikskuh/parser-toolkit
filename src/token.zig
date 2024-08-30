@@ -3,7 +3,7 @@ const std = @import("std");
 const Location = @import("Location.zig");
 
 pub fn Token(comptime Type: type) type {
-    if (@typeInfo(Type) != .Enum)
+    if (@typeInfo(Type) != .@"enum")
         @compileError("Type must be a enum type!");
     return struct {
         /// The location of the token in the source stream
