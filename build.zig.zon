@@ -1,0 +1,9 @@
+.{
+    .name = .parser_toolkit,
+    .version = "0.1.0",
+    .fingerprint = 0xe5f87573d06a66d,
+    .min_zig_version = "0.14.0",
+    .paths = .{
+        ".",
+    },
+}
