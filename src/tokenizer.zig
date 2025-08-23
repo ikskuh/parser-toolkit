@@ -13,7 +13,7 @@ pub fn Pattern(comptime TokenType: type) type {
         match: Matcher,
 
         pub fn create(token_type: TokenType, match: Matcher) Self {
-            return Self{
+            return .{
                 .type = token_type,
                 .match = match,
             };
@@ -40,7 +40,7 @@ pub fn Tokenizer(comptime TokenTypeT: type, comptime patterns: []const Pattern(T
             return Self{
                 .source = source,
                 .offset = 0,
-                .current_location = Location{
+                .current_location = .{
                     .source = file_name,
                     .line = 1,
                     .column = 1,
@@ -49,7 +49,7 @@ pub fn Tokenizer(comptime TokenTypeT: type, comptime patterns: []const Pattern(T
         }
 
         pub fn saveState(self: Self) State {
-            return State{
+            return .{
                 .offset = self.offset,
                 .location = self.current_location,
             };
@@ -65,10 +65,10 @@ pub fn Tokenizer(comptime TokenTypeT: type, comptime patterns: []const Pattern(T
             const rest = self.source[self.offset..];
             if (rest.len == 0)
                 return null;
-            const maybe_token = for (patterns) |pat| {
+            const maybe_token: ?Token = for (patterns) |pat| {
                 if (pat.match(rest)) |len| {
                     if (len > 0) {
-                        break Token{
+                        break .{
                             .location = self.current_location,
                             .text = rest[0..len],
                             .type = pat.type,
@@ -76,6 +76,7 @@ pub fn Tokenizer(comptime TokenTypeT: type, comptime patterns: []const Pattern(T
                     }
                 }
             } else null;
+
             if (maybe_token) |token| {
                 self.offset += token.text.len;
                 self.current_location.advance(token.text);
