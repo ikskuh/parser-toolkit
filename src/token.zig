@@ -15,13 +15,10 @@ pub fn Token(comptime Type: type) type {
         /// The type of the token that was matched by a matching function
         type: Type,
 
-        pub fn format(tok: @This(), fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = opt;
-
+        pub fn format(tok: @This(), writer: *std.Io.Writer) !void {
             try writer.print("Token(type={}, text=\"{}\", location={})", .{
                 std.zig.fmtId(@tagName(tok.type)),
-                std.zig.fmtEscapes(tok.text),
+                std.zig.fmtString(tok.text),
                 tok.location,
             });
         }
