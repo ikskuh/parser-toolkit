@@ -65,9 +65,7 @@ pub fn advance(self: *Location, str: []const u8) void {
     }
 }
 
-pub fn format(location: Location, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-    _ = fmt;
-    _ = options;
+pub fn format(location: Location, writer: *std.Io.Writer) !void {
     if (location.source) |source_file| {
         try writer.print("{s}:{d}:{d}", .{
             source_file,
