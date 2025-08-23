@@ -7,11 +7,13 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    var line_buffer = std.ArrayList(u8).init(allocator);
-    defer line_buffer.deinit();
+    var stdin_buf: [4096]u8 = undefined;
+    var stdin_reader = std.fs.File.stdin().reader(&stdin_buf);
+    const stdin = &stdin_reader.interface;
 
-    var stdin = std.io.getStdIn().reader();
-    var stdout = std.io.getStdOut().writer();
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
 
     var calc = Calculator.init(allocator);
     defer calc.deinit();
@@ -21,19 +23,21 @@ pub fn main() !void {
 
     main_loop: while (true) {
         try stdout.writeAll("? ");
-        stdin.readUntilDelimiterArrayList(&line_buffer, '\n', 4096) catch |err| switch (err) {
+        try stdout.flush();
+        const raw_line = stdin.takeDelimiterExclusive('\n') catch |err| switch (err) {
             error.EndOfStream => break :main_loop,
             else => |e| return e,
         };
-        const line = std.mem.trim(u8, line_buffer.items, "\t ");
+        const line = std.mem.trim(u8, raw_line, "\t ");
 
         const value = calc.evaluate(line) catch |err| {
-            try stdout.print("error: {s}\n", .{@errorName(err)});
+            try stdout.print("error: {t}\n", .{err});
             continue;
         };
         try stdout.print("= {d}\n", .{value});
     }
     try stdout.writeAll("\n");
+    try stdout.flush();
 }
 
 const Calculator = struct {

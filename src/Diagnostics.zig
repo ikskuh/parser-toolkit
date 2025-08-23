@@ -6,11 +6,11 @@ const Location = @import("Location.zig");
 const Self = @This();
 
 memory: std.heap.ArenaAllocator,
-errors: std.ArrayListUnmanaged(Error) = .{},
+errors: std.ArrayList(Error) = .{},
 
 pub fn init(allocator: std.mem.Allocator) Self {
     return Self{
-        .memory = std.heap.ArenaAllocator.init(allocator),
+        .memory = .init(allocator),
     };
 }
 
@@ -22,20 +22,26 @@ pub fn deinit(self: *Self) void {
 pub fn print(self: Self, writer: anytype) !void {
     for (self.errors.items) |err| {
         const source = err.location.source orelse "???";
-        try writer.print("{s}:{d}:{d}: {s}: {s}\n", .{
+        try writer.print("{s}:{d}:{d}: {t}: {s}\n", .{
             source,
             err.location.line,
             err.location.column,
-            @tagName(err.level),
+            err.level,
             err.message,
         });
     }
 }
 
-pub fn emit(self: *Self, location: Location, level: Error.Level, comptime fmt: []const u8, args: anytype) !void {
+pub fn emit(
+    self: *Self,
+    location: Location,
+    level: Error.Level,
+    comptime fmt: []const u8,
+    args: anytype,
+) !void {
     const allocator = self.memory.allocator();
 
-    const str = try std.fmt.allocPrintZ(allocator, fmt, args);
+    const str = try std.fmt.allocPrintSentinel(allocator, fmt, args, 0);
     errdefer allocator.free(str);
 
     try self.errors.append(allocator, Error{

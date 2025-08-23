@@ -26,7 +26,7 @@ pub fn ParserCore(comptime TokenizerT: type, comptime ignore_list: anytype) type
         /// The core will only reference the Tokenizer and will modify
         /// it's state.
         pub fn init(tokenizer: *Tokenizer) Self {
-            return Self{
+            return .{
                 .tokenizer = tokenizer,
             };
         }
