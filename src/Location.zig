@@ -13,11 +13,12 @@ pub fn min(a: Location, b: Location) Location {
         if (!std.mem.eql(u8, a.source.?, b.source.?))
             @panic("a and b must be from the same source file!");
     }
-    var loc = Location{
+    var loc: Location = .{
         .line = undefined,
         .column = undefined,
         .source = a.source orelse b.source,
     };
+
     if (a.line < b.line) {
         loc.line = a.line;
         loc.column = a.column;
@@ -36,11 +37,12 @@ pub fn max(a: Location, b: Location) Location {
         if (!std.mem.eql(u8, a.source.?, b.source.?))
             @panic("a and b must be from the same source file!");
     }
-    var loc = Location{
+    var loc: Location = .{
         .line = undefined,
         .column = undefined,
         .source = a.source orelse b.source,
     };
+
     if (a.line > b.line) {
         loc.line = a.line;
         loc.column = a.column;
