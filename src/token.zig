@@ -16,7 +16,7 @@ pub fn Token(comptime Type: type) type {
         type: Type,
 
         pub fn format(tok: @This(), writer: *std.Io.Writer) !void {
-            try writer.print("Token(type={}, text=\"{}\", location={})", .{
+            try writer.print("Token(type={f}, text=\"{f}\", location={f})", .{
                 std.zig.fmtId(@tagName(tok.type)),
                 std.zig.fmtString(tok.text),
                 tok.location,
