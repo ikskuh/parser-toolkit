@@ -34,7 +34,7 @@ pub fn ParserCore(comptime TokenizerT: type, comptime ignore_list: anytype) type
         /// Yields the next filtered token
         pub fn nextToken(self: *Self) !?Token {
             while (try self.tokenizer.next()) |tok| {
-                if (std.mem.indexOfScalar(TokenType, &ignore_array, tok.type) == null)
+                if (std.mem.findScalar(TokenType, &ignore_array, tok.type) == null)
                     return tok;
             }
             return null;
@@ -88,7 +88,7 @@ pub fn RuleSet(comptime TokenType: type) type {
             const types_array: [types.len]TokenType = types;
             return struct {
                 fn f(t: TokenType) bool {
-                    return (std.mem.indexOfScalar(TokenType, &types_array, t) != null);
+                    return (std.mem.findScalar(TokenType, &types_array, t) != null);
                 }
             }.f;
         }

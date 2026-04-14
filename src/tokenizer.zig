@@ -124,7 +124,7 @@ pub const matchers = struct {
         return struct {
             fn match(str: []const u8) ?usize {
                 for (str, 0..) |c, i| {
-                    if (std.mem.indexOfScalar(u8, chars, c) == null) {
+                    if (std.mem.findScalar(u8, chars, c) == null) {
                         return i;
                     }
                 }
@@ -145,7 +145,7 @@ pub const matchers = struct {
             fn match(str: []const u8) ?usize {
                 for (str, 0..) |c, i| {
                     const lc = std.ascii.toLower(c);
-                    if (std.mem.indexOfScalar(u8, &lower_chars, lc) == null) {
+                    if (std.mem.findScalar(u8, &lower_chars, lc) == null) {
                         return i;
                     }
                 }
@@ -159,7 +159,7 @@ pub const matchers = struct {
         return struct {
             fn match(str: []const u8) ?usize {
                 for (str, 0..) |c, i| {
-                    if (std.mem.indexOfScalar(u8, chars, c) != null) {
+                    if (std.mem.findScalar(u8, chars, c) != null) {
                         return i;
                     }
                 }
@@ -204,7 +204,7 @@ pub const matchers = struct {
         const first_char = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
         const all_chars = first_char ++ "0123456789";
         for (str, 0..) |c, i| {
-            if (std.mem.indexOfScalar(u8, if (i > 0) all_chars else first_char, c) == null) {
+            if (std.mem.findScalar(u8, if (i > 0) all_chars else first_char, c) == null) {
                 return i;
             }
         }

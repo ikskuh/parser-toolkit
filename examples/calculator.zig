@@ -1,21 +1,19 @@
 const std = @import("std");
 const ptk = @import("parser-toolkit");
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
+    const io = init.io;
 
     var stdin_buf: [4096]u8 = undefined;
-    var stdin_reader = std.fs.File.stdin().reader(&stdin_buf);
+    var stdin_reader = std.Io.File.stdin().reader(io, &stdin_buf);
     const stdin = &stdin_reader.interface;
 
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
     const stdout = &stdout_writer.interface;
 
-    var calc = Calculator.init(allocator);
+    var calc = Calculator.init(gpa);
     defer calc.deinit();
 
     try calc.set("pi", std.math.pi);
@@ -24,10 +22,7 @@ pub fn main() !void {
     main_loop: while (true) {
         try stdout.writeAll("? ");
         try stdout.flush();
-        const raw_line = stdin.takeDelimiterExclusive('\n') catch |err| switch (err) {
-            error.EndOfStream => break :main_loop,
-            else => |e| return e,
-        };
+        const raw_line = try stdin.takeDelimiter('\n') orelse break :main_loop;
         const line = std.mem.trim(u8, raw_line, "\t ");
 
         const value = calc.evaluate(line) catch |err| {
@@ -46,10 +41,10 @@ const Calculator = struct {
     arena: std.heap.ArenaAllocator,
     variables: std.StringHashMapUnmanaged(f64),
 
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return Self{
-            .arena = std.heap.ArenaAllocator.init(allocator),
-            .variables = .{},
+    pub fn init(gpa: std.mem.Allocator) Self {
+        return .{
+            .arena = .init(gpa),
+            .variables = .empty,
         };
     }
 
