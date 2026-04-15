@@ -8,6 +8,8 @@ jobs:
   zig-build-test:
     name: Zig build/test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
