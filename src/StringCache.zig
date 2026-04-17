@@ -12,7 +12,7 @@ items: std.StringHashMapUnmanaged(void),
 pub fn init(allocator: std.mem.Allocator) StringCache {
     return StringCache{
         .arena = .init(allocator),
-        .items = .{},
+        .items = .empty,
     };
 }
 
