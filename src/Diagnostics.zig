@@ -6,11 +6,12 @@ const Location = @import("Location.zig");
 const Self = @This();
 
 memory: std.heap.ArenaAllocator,
-errors: std.ArrayList(Error) = .{},
+errors: std.ArrayList(Error),
 
 pub fn init(allocator: std.mem.Allocator) Self {
     return Self{
         .memory = .init(allocator),
+        .errors = .empty,
     };
 }
 
